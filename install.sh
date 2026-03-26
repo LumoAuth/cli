@@ -3,7 +3,7 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
 #
 # Installs the lumo CLI to ~/.local/bin without requiring sudo.
-# Supports Linux (amd64, arm64), macOS (amd64, arm64), and Windows WSL.
+# Supports Linux (x86_64, arm64, i386), macOS (x86_64, arm64), and Windows WSL.
 
 set -e
 
@@ -22,17 +22,18 @@ error() { printf '  \033[1;31m✗\033[0m %s\n' "$*" >&2; exit 1; }
 
 detect_os() {
     case "$(uname -s)" in
-        Linux*)  OS="linux"  ;;
-        Darwin*) OS="darwin" ;;
+        Linux*)  OS="Linux"  ;;
+        Darwin*) OS="Darwin" ;;
         *)       error "Unsupported operating system: $(uname -s). Use Linux, macOS or WSL." ;;
     esac
 }
 
 detect_arch() {
     case "$(uname -m)" in
-        x86_64|amd64)   ARCH="amd64"  ;;
+        x86_64|amd64)    ARCH="x86_64" ;;
         aarch64|arm64)   ARCH="arm64"  ;;
-        *)               error "Unsupported architecture: $(uname -m). Use amd64 or arm64." ;;
+        i386|i686)       ARCH="i386"   ;;
+        *)               error "Unsupported architecture: $(uname -m). Supported: x86_64, arm64, i386." ;;
     esac
 }
 
@@ -56,8 +57,50 @@ get_latest_version() {
 
 # --- download & install -----------------------------------------------------
 
+download() {
+    _url="$1"
+    _dest="$2"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL -o "$_dest" "$_url"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$_dest" "$_url"
+    fi
+}
+
+verify_checksums() {
+    CHECKSUMS_FILE="cli_${VERSION#v}_checksums.txt"
+    CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/${CHECKSUMS_FILE}"
+
+    info "Verifying checksum…"
+    if ! download "$CHECKSUMS_URL" "${TMPDIR}/${CHECKSUMS_FILE}" 2>/dev/null; then
+        warn "Could not download checksums file — skipping verification."
+        return 0
+    fi
+
+    EXPECTED=$(grep "${TARBALL}" "${TMPDIR}/${CHECKSUMS_FILE}" | awk '{print $1}')
+    if [ -z "$EXPECTED" ]; then
+        warn "No checksum found for ${TARBALL} — skipping verification."
+        return 0
+    fi
+
+    if command -v sha256sum >/dev/null 2>&1; then
+        ACTUAL=$(sha256sum "${TMPDIR}/${TARBALL}" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        ACTUAL=$(shasum -a 256 "${TMPDIR}/${TARBALL}" | awk '{print $1}')
+    else
+        warn "Neither sha256sum nor shasum found — skipping verification."
+        return 0
+    fi
+
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+        error "Checksum mismatch!\n  Expected: ${EXPECTED}\n  Got:      ${ACTUAL}"
+    fi
+
+    ok "Checksum verified."
+}
+
 download_binary() {
-    TARBALL="lumo_${VERSION#v}_${OS}_${ARCH}.tar.gz"
+    TARBALL="cli_${OS}_${ARCH}.tar.gz"
     URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
 
     info "Downloading ${BINARY_NAME} ${VERSION} for ${OS}/${ARCH}…"
@@ -65,21 +108,26 @@ download_binary() {
     TMPDIR=$(mktemp -d)
     trap 'rm -rf "$TMPDIR"' EXIT
 
-    if command -v curl >/dev/null 2>&1; then
-        HTTP_CODE=$(curl -fsSL -w '%{http_code}' -o "${TMPDIR}/${TARBALL}" "$URL" 2>/dev/null) || true
-    elif command -v wget >/dev/null 2>&1; then
-        HTTP_CODE=$(wget --server-response -qO "${TMPDIR}/${TARBALL}" "$URL" 2>&1 | awk '/^  HTTP/{print $2}' | tail -1) || true
+    if ! download "$URL" "${TMPDIR}/${TARBALL}" 2>/dev/null; then
+        error "Download failed. URL: ${URL}"
     fi
 
     if [ ! -f "${TMPDIR}/${TARBALL}" ] || [ "$(wc -c < "${TMPDIR}/${TARBALL}" 2>/dev/null)" -lt 100 ]; then
-        error "Download failed (HTTP ${HTTP_CODE:-???}). URL: ${URL}"
+        error "Download failed — file is empty or missing. URL: ${URL}"
     fi
+
+    verify_checksums
 
     info "Extracting…"
     tar -xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
+    # GoReleaser puts the binary as 'cli' in the archive
+    if [ -f "${TMPDIR}/cli" ]; then
+        mv "${TMPDIR}/cli" "${TMPDIR}/${BINARY_NAME}"
+    fi
+
     if [ ! -f "${TMPDIR}/${BINARY_NAME}" ]; then
-        error "Archive did not contain a '${BINARY_NAME}' binary."
+        error "Archive did not contain a '${BINARY_NAME}' or 'cli' binary."
     fi
 
     mkdir -p "$INSTALL_DIR"
