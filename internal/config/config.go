@@ -16,7 +16,7 @@ const (
 // Config holds all CLI configuration.
 type Config struct {
 	APIKey  string `yaml:"api_key" json:"api_key"`
-	Tenant  string `yaml:"tenant" json:"tenant"`
+	OrgID   string `yaml:"org_id" json:"org_id"`
 	BaseURL string `yaml:"base_url" json:"base_url"`
 	Format  string `yaml:"format" json:"format"`
 	Insecure bool  `yaml:"insecure" json:"insecure"`
@@ -24,7 +24,7 @@ type Config struct {
 
 // Load resolves configuration with precedence: flags > env > file.
 // Flag values are passed in as overrides (empty string = not set).
-func Load(flagAPIKey, flagTenant, flagBaseURL, flagFormat string, flagInsecure bool) (*Config, error) {
+func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bool) (*Config, error) {
 	cfg := &Config{}
 
 	// 1. Load from config file (lowest priority)
@@ -39,8 +39,8 @@ func Load(flagAPIKey, flagTenant, flagBaseURL, flagFormat string, flagInsecure b
 	if v := os.Getenv("LUMO_API_KEY"); v != "" {
 		cfg.APIKey = v
 	}
-	if v := os.Getenv("LUMO_TENANT"); v != "" {
-		cfg.Tenant = v
+	if v := os.Getenv("LUMO_ORG_ID"); v != "" {
+		cfg.OrgID = v
 	}
 	if v := os.Getenv("LUMO_BASE_URL"); v != "" {
 		cfg.BaseURL = v
@@ -56,8 +56,8 @@ func Load(flagAPIKey, flagTenant, flagBaseURL, flagFormat string, flagInsecure b
 	if flagAPIKey != "" {
 		cfg.APIKey = flagAPIKey
 	}
-	if flagTenant != "" {
-		cfg.Tenant = flagTenant
+	if flagOrgID != "" {
+		cfg.OrgID = flagOrgID
 	}
 	if flagBaseURL != "" {
 		cfg.BaseURL = flagBaseURL
@@ -85,8 +85,8 @@ func (c *Config) Validate() error {
 	if c.APIKey == "" {
 		return fmt.Errorf("API key is required. Set via --api-key flag, LUMO_API_KEY env var, or 'lumo config init'")
 	}
-	if c.Tenant == "" {
-		return fmt.Errorf("tenant slug is required. Set via --tenant flag, LUMO_TENANT env var, or 'lumo config init'")
+	if c.OrgID == "" {
+		return fmt.Errorf("organization ID is required. Set via --org-id flag, LUMO_ORG_ID env var, or 'lumo config init'")
 	}
 	return nil
 }

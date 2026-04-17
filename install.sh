@@ -191,7 +191,7 @@ main() {
     ensure_path
 
     printf '\n\033[1m  Done! Get started:\033[0m\n\n'
-    printf '    # Set up your LumoAuth tenant connection\n'
+    printf '    # Set up your LumoAuth organization connection\n'
     printf '    lumo config init\n\n'
     printf '    # Once configured, try:\n'
     printf '    lumo users list\n'

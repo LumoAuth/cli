@@ -13,7 +13,7 @@ import (
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Manage CLI configuration",
-	Long:  "View, set, and initialize CLI configuration for connecting to your LumoAuth tenant.",
+	Long:  "View, set, and initialize CLI configuration for connecting to your LumoAuth organization.",
 }
 
 var configInitCmd = &cobra.Command{
@@ -30,20 +30,20 @@ var configInitCmd = &cobra.Command{
 		// Load existing config for defaults
 		existing, _ := getConfig()
 
-		// Tenant slug
-		defaultTenant := ""
+		// Organization ID
+		defaultOrgID := ""
 		if existing != nil {
-			defaultTenant = existing.Tenant
+			defaultOrgID = existing.OrgID
 		}
-		fmt.Printf("Tenant slug")
-		if defaultTenant != "" {
-			fmt.Printf(" [%s]", defaultTenant)
+		fmt.Printf("Organization ID")
+		if defaultOrgID != "" {
+			fmt.Printf(" [%s]", defaultOrgID)
 		}
 		fmt.Print(": ")
-		tenant, _ := reader.ReadString('\n')
-		tenant = strings.TrimSpace(tenant)
-		if tenant == "" {
-			tenant = defaultTenant
+		orgID, _ := reader.ReadString('\n')
+		orgID = strings.TrimSpace(orgID)
+		if orgID == "" {
+			orgID = defaultOrgID
 		}
 
 		// API key
@@ -74,7 +74,7 @@ var configInitCmd = &cobra.Command{
 		}
 
 		cfg := &config.Config{
-			Tenant:  tenant,
+			OrgID:   orgID,
 			APIKey:  apiKey,
 			BaseURL: baseURL,
 			Format:  "table",
@@ -109,7 +109,7 @@ var configShowCmd = &cobra.Command{
 
 		if p.IsJSON() {
 			p.PrintResult(map[string]interface{}{
-				"tenant":    cfg.Tenant,
+				"org_id":    cfg.OrgID,
 				"api_key":   maskedKey,
 				"base_url":  cfg.BaseURL,
 				"format":    cfg.Format,
@@ -121,7 +121,7 @@ var configShowCmd = &cobra.Command{
 
 		fmt.Println("Current Configuration")
 		fmt.Println("─────────────────────")
-		fmt.Printf("  Tenant:      %s\n", cfg.Tenant)
+		fmt.Printf("  Org ID:      %s\n", cfg.OrgID)
 		fmt.Printf("  API Key:     %s\n", maskedKey)
 		fmt.Printf("  Base URL:    %s\n", cfg.BaseURL)
 		fmt.Printf("  Format:      %s\n", cfg.Format)
@@ -136,7 +136,7 @@ var configSetCmd = &cobra.Command{
 	Short: "Set a configuration value",
 	Long: `Set a configuration value in the config file.
 
-Available keys: tenant, api_key, base_url, format, insecure`,
+Available keys: org_id, api_key, base_url, format, insecure`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]
@@ -149,8 +149,8 @@ Available keys: tenant, api_key, base_url, format, insecure`,
 		}
 
 		switch key {
-		case "tenant":
-			cfg.Tenant = value
+		case "org_id":
+			cfg.OrgID = value
 		case "api_key":
 			cfg.APIKey = value
 		case "base_url":
@@ -160,7 +160,7 @@ Available keys: tenant, api_key, base_url, format, insecure`,
 		case "insecure":
 			cfg.Insecure = value == "true" || value == "1"
 		default:
-			return fmt.Errorf("unknown config key: %s (available: tenant, api_key, base_url, format, insecure)", key)
+			return fmt.Errorf("unknown config key: %s (available: org_id, api_key, base_url, format, insecure)", key)
 		}
 
 		if err := cfg.Save(); err != nil {

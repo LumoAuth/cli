@@ -12,7 +12,7 @@ import (
 var usersCmd = &cobra.Command{
 	Use:     "users",
 	Aliases: []string{"user", "u"},
-	Short:   "Manage tenant users",
+	Short:   "Manage organization users",
 	Long:    "List, create, update, delete, block/unblock users and manage their roles and groups.",
 }
 

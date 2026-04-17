@@ -1,8 +1,8 @@
 # LumoAuth CLI
 
-A comprehensive command-line interface for managing your [LumoAuth](https://lumoauth.com) tenant — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
+A comprehensive command-line interface for managing your [LumoAuth](https://lumoauth.com) organization — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
 
-Designed for **tenant admins** and **AI coding agents** alike.
+Designed for **org admins** and **AI coding agents** alike.
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ After installation, restart your shell (or `source` your profile) and run:
 lumo config init
 ```
 
-This launches an interactive wizard that configures your API key, tenant, and region — everything you need to start managing your LumoAuth tenant from the command line.
+This launches an interactive wizard that configures your API key, organization ID, and region — everything you need to start managing your LumoAuth organization from the command line.
 
 ### Build from source
 
@@ -51,18 +51,18 @@ go install .
 
 ## Authentication
 
-The CLI uses tenant Admin API keys (prefixed `lmk_`). Create one at:
+The CLI uses organization Admin API keys (prefixed `lmk_`). Create one at:
 
 ```
-https://<your-lumoauth>/t/<tenant>/portal/settings/api-keys
+https://<your-lumoauth>/orgs/<orgId>/portal/settings/api-keys
 ```
 
 ### Configuration Precedence
 
 | Priority | Method | Example |
 |----------|--------|---------|
-| 1 (highest) | CLI flags | `--api-key lmk_xxx --tenant acme-corp` |
-| 2 | Environment variables | `LUMO_API_KEY`, `LUMO_TENANT`, `LUMO_BASE_URL` |
+| 1 (highest) | CLI flags | `--api-key lmk_xxx --org-id 01932f3a-...` |
+| 2 | Environment variables | `LUMO_API_KEY`, `LUMO_ORG_ID`, `LUMO_BASE_URL` |
 | 3 (lowest) | Config file | `~/.lumoauth/config.yaml` |
 
 ### Config File
@@ -70,7 +70,7 @@ https://<your-lumoauth>/t/<tenant>/portal/settings/api-keys
 ```yaml
 # ~/.lumoauth/config.yaml
 api_key: lmk_your_key_here
-tenant: acme-corp
+org_id: 01932f3a-0000-7000-8000-000000000000
 base_url: https://app.lumoauth.dev   # or https://eu.app.lumoauth.dev for EU
 format: table
 insecure: false
@@ -81,7 +81,7 @@ Manage your config via:
 ```bash
 lumo config init          # Interactive setup wizard
 lumo config show          # Display current configuration
-lumo config set tenant acme-corp
+lumo config set org_id 01932f3a-0000-7000-8000-000000000000
 lumo config set api_key lmk_abc123
 ```
 
@@ -91,7 +91,7 @@ lumo config set api_key lmk_abc123
 
 ```
 --api-key string    API key (overrides LUMO_API_KEY)
---tenant string     Tenant slug (overrides LUMO_TENANT)
+--org-id string     Organization ID (overrides LUMO_ORG_ID)
 --base-url string   Base URL (overrides LUMO_BASE_URL)
 -o, --output string Output format: table, json, yaml (default: table)
 --insecure          Skip TLS verification (useful for local dev)
@@ -239,9 +239,9 @@ lumo social delete <id>
 For endpoints not covered by named commands, or for use by AI agents:
 
 ```bash
-lumo api GET /t/acme-corp/api/v1/admin/users
-lumo api POST /t/acme-corp/api/v1/admin/roles --data '{"name": "Editor"}'
-lumo api DELETE /t/acme-corp/api/v1/admin/users/abc-123
+lumo api GET /orgs/<orgId>/api/v1/admin/users
+lumo api POST /orgs/<orgId>/api/v1/admin/roles --data '{"name": "Editor"}'
+lumo api DELETE /orgs/<orgId>/api/v1/admin/users/abc-123
 ```
 
 ## Output Formats
@@ -278,14 +278,14 @@ This CLI is designed to be easily used by AI coding agents (Copilot, Cursor, Cla
 ### Example: AI Agent Prompt
 
 ```
-You have access to the LumoAuth CLI (`lumo`). Use it to manage users, roles, 
-and permissions for the tenant. Environment variables LUMO_API_KEY and 
-LUMO_TENANT are pre-configured.
+You have access to the LumoAuth CLI (`lumo`). Use it to manage users, roles,
+and permissions for the organization. Environment variables LUMO_API_KEY and
+LUMO_ORG_ID are pre-configured.
 
 To list users:     lumo users list -o json
 To create a role:  lumo roles create --name "Editor" --permissions doc.edit,doc.view -o json
 To check settings: lumo settings get auth -o json
-To make raw calls: lumo api GET /t/{tenant}/api/v1/admin/users -o json
+To make raw calls: lumo api GET /orgs/{orgId}/api/v1/admin/users -o json
 
 Always use -o json for parseable output.
 ```
@@ -305,7 +305,7 @@ echo "Role $ROLE assigned"
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LUMO_API_KEY` | Admin API key (`lmk_...`) | — |
-| `LUMO_TENANT` | Tenant slug | — |
+| `LUMO_ORG_ID` | Organization ID | — |
 | `LUMO_BASE_URL` | LumoAuth server URL | `https://app.lumoauth.dev` (US) |
 | `LUMO_OUTPUT_FORMAT` | Default output format | `table` |
 | `LUMO_INSECURE` | Skip TLS verification (`true`/`1`) | `false` |

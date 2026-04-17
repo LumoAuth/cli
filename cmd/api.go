@@ -14,12 +14,12 @@ var apiCmd = &cobra.Command{
 	Long: `Make raw HTTP requests to any LumoAuth API endpoint.
 This is useful for AI agents or accessing endpoints not covered by named commands.
 
-The PATH is relative to the base URL. Include the full tenant path.
+The PATH is relative to the base URL. Include the full organization path.
 
 Examples:
-  lumo api GET /t/acme-corp/api/v1/admin/users
-  lumo api POST /t/acme-corp/api/v1/admin/roles --data '{"name":"Editor"}'
-  lumo api DELETE /t/acme-corp/api/v1/admin/users/123`,
+  lumo api GET /orgs/<orgId>/api/v1/admin/users
+  lumo api POST /orgs/<orgId>/api/v1/admin/roles --data '{"name":"Editor"}'
+  lumo api DELETE /orgs/<orgId>/api/v1/admin/users/123`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()

@@ -12,7 +12,7 @@ import (
 
 var (
 	flagAPIKey   string
-	flagTenant   string
+	flagOrgID    string
 	flagBaseURL  string
 	flagFormat   string
 	flagInsecure bool
@@ -23,15 +23,15 @@ var (
 // rootCmd represents the base command.
 var rootCmd = &cobra.Command{
 	Use:   "lumo",
-	Short: "LumoAuth CLI — manage your tenant's identity infrastructure",
-	Long: `LumoAuth CLI provides comprehensive management of your LumoAuth tenant.
+	Short: "LumoAuth CLI — manage your organization's identity infrastructure",
+	Long: `LumoAuth CLI provides comprehensive management of your LumoAuth organization.
 
 Manage users, roles, groups, OAuth clients, agents, webhooks,
 audit logs, permissions, settings, sessions, and more.
 
 Authentication:
   Set your API key via --api-key, LUMO_API_KEY env var, or 'lumo config init'.
-  API keys are created at /t/<tenant>/portal/settings/api-keys.
+  API keys are created at /orgs/<orgId>/portal/settings/api-keys.
 
 AI Agent Integration:
   Use -o json for structured output, or pipe to get auto-JSON.
@@ -42,7 +42,7 @@ Examples:
   lumo roles create --name "Editor"
   lumo audit-logs list --limit 50
   lumo settings get auth
-  lumo api GET /t/acme-corp/api/v1/admin/users`,
+  lumo api GET /orgs/<orgId>/api/v1/admin/users`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 }
@@ -76,7 +76,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&flagAPIKey, "api-key", "", "LumoAuth API key (overrides LUMO_API_KEY)")
-	rootCmd.PersistentFlags().StringVar(&flagTenant, "tenant", "", "Tenant slug (overrides LUMO_TENANT)")
+	rootCmd.PersistentFlags().StringVar(&flagOrgID, "org-id", "", "Organization ID (overrides LUMO_ORG_ID)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "", "Base URL (overrides LUMO_BASE_URL)")
 	rootCmd.PersistentFlags().StringVarP(&flagFormat, "output", "o", "", "Output format: table, json, yaml (default: table)")
 	rootCmd.PersistentFlags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification")
@@ -86,7 +86,7 @@ func init() {
 
 // getConfig loads and validates the configuration.
 func getConfig() (*config.Config, error) {
-	return config.Load(flagAPIKey, flagTenant, flagBaseURL, flagFormat, flagInsecure)
+	return config.Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat, flagInsecure)
 }
 
 // getConfigValidated loads config and validates required fields.

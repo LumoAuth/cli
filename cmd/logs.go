@@ -12,7 +12,7 @@ var logsCmd = &cobra.Command{
 	Use:     "logs",
 	Aliases: []string{"audit-logs", "audit"},
 	Short:   "View audit logs",
-	Long:    "List, view, and export tenant audit logs.",
+	Long:    "List, view, and export organization audit logs.",
 }
 
 var logsListCmd = &cobra.Command{

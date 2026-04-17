@@ -75,22 +75,22 @@ func New(cfg *config.Config) *Client {
 // adminURL builds the full URL for an admin API endpoint.
 func (c *Client) adminURL(path string) string {
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	tenant := c.cfg.Tenant
+	orgID := c.cfg.OrgID
 	// Ensure path starts with /
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return fmt.Sprintf("%s/t/%s/api/v1/admin%s", base, tenant, path)
+	return fmt.Sprintf("%s/orgs/%s/api/v1/admin%s", base, orgID, path)
 }
 
-// tenantURL builds the full URL for a tenant-scoped API endpoint (non-admin).
-func (c *Client) tenantURL(path string) string {
+// orgURL builds the full URL for an org-scoped API endpoint (non-admin).
+func (c *Client) orgURL(path string) string {
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	tenant := c.cfg.Tenant
+	orgID := c.cfg.OrgID
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
-	return fmt.Sprintf("%s/t/%s/api/v1%s", base, tenant, path)
+	return fmt.Sprintf("%s/orgs/%s/api/v1%s", base, orgID, path)
 }
 
 // rawURL builds a URL from the base URL and arbitrary path.
