@@ -17,6 +17,7 @@ import (
 // Client wraps HTTP interactions with the LumoAuth Admin API.
 type Client struct {
 	cfg        *config.Config
+	creds      *config.Credentials // optional; used when no API key configured
 	httpClient *http.Client
 }
 
@@ -56,20 +57,41 @@ type PaginationMeta struct {
 	HasPreviousPage bool `json:"hasPreviousPage"`
 }
 
-// New creates a new API client from config.
+// New creates a new API client from config. When the config has no API key
+// set, the client will look for ~/.lumoauth/credentials.yaml from a prior
+// `lumo login` and use the stored bearer token instead.
 func New(cfg *config.Config) *Client {
 	transport := &http.Transport{}
 	if cfg.Insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 
-	return &Client{
+	c := &Client{
 		cfg: cfg,
 		httpClient: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: transport,
 		},
 	}
+
+	// Fall back to device-flow credentials only when no API key was supplied.
+	if cfg.APIKey == "" {
+		if creds, _ := config.LoadCredentials(); creds != nil && !creds.IsExpired() {
+			c.creds = creds
+			// If config didn't pin an org, take it from the credentials so
+			// the user doesn't have to repeat --org on every command.
+			if c.cfg.OrgID == "" {
+				c.cfg.OrgID = creds.OrgID
+			}
+			if c.cfg.BaseURL == "" || c.cfg.BaseURL == "https://app.lumoauth.dev" {
+				if creds.BaseURL != "" {
+					c.cfg.BaseURL = creds.BaseURL
+				}
+			}
+		}
+	}
+
+	return c
 }
 
 // adminURL builds the full URL for an admin API endpoint.
@@ -151,8 +173,12 @@ func (c *Client) doRequest(method, fullURL string, body interface{}) (json.RawMe
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers
-	req.Header.Set("X-API-Key", c.cfg.APIKey)
+	// Set headers — prefer API key, fall back to device-flow Bearer token.
+	if c.cfg.APIKey != "" {
+		req.Header.Set("X-API-Key", c.cfg.APIKey)
+	} else if c.creds != nil {
+		req.Header.Set("Authorization", "Bearer "+c.creds.AccessToken)
+	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

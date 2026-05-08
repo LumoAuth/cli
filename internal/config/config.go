@@ -81,9 +81,30 @@ func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bo
 }
 
 // Validate checks that required fields are set.
+//
+// Auth is satisfied EITHER by an API key (legacy / scriptable path) or by
+// stored device-flow credentials (`lumo login`). When the API key is empty,
+// we treat a non-expired credentials file at ~/.lumoauth/credentials.yaml as
+// equivalent — the api client will use its bearer token instead.
 func (c *Config) Validate() error {
 	if c.APIKey == "" {
-		return fmt.Errorf("API key is required. Set via --api-key flag, LUMO_API_KEY env var, or 'lumo config init'")
+		creds, _ := LoadCredentials()
+		if creds == nil {
+			return fmt.Errorf("not authenticated. Run 'lumo login', or set --api-key / LUMO_API_KEY for scripted use")
+		}
+		if creds.IsExpired() {
+			return fmt.Errorf("stored credentials have expired. Run 'lumo login' to renew")
+		}
+		// Inherit org/base from credentials when not overridden — saves
+		// callers from passing --org-id every time.
+		if c.OrgID == "" {
+			c.OrgID = creds.OrgID
+		}
+		if c.BaseURL == "" || c.BaseURL == "https://app.lumoauth.dev" {
+			if creds.BaseURL != "" {
+				c.BaseURL = creds.BaseURL
+			}
+		}
 	}
 	if c.OrgID == "" {
 		return fmt.Errorf("organization ID is required. Set via --org-id flag, LUMO_ORG_ID env var, or 'lumo config init'")
