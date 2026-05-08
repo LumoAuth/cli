@@ -51,26 +51,55 @@ var configInitCmd = &cobra.Command{
 		apiKey, _ := reader.ReadString('\n')
 		apiKey = strings.TrimSpace(apiKey)
 
-		// Region
-		fmt.Println("Region:")
-		fmt.Println("  1) US  (app.lumoauth.dev)")
-		fmt.Println("  2) EU  (eu.app.lumoauth.dev)")
-		defaultRegion := "1"
-		if existing != nil && strings.Contains(existing.BaseURL, "eu.") {
-			defaultRegion = "2"
+		// Region — same enum as the mobile app and `lumo login`.
+		defaultIdx := 1
+		if existing != nil {
+			switch config.RegionForURL(existing.BaseURL) {
+			case config.RegionEU:
+				defaultIdx = 2
+			case config.RegionCustom:
+				if existing.BaseURL != "" {
+					defaultIdx = 3
+				}
+			}
 		}
-		fmt.Printf("Select region [%s]: ", defaultRegion)
-		region, _ := reader.ReadString('\n')
-		region = strings.TrimSpace(region)
-		if region == "" {
-			region = defaultRegion
+		fmt.Println("Region:")
+		for i, r := range config.Regions {
+			fmt.Printf("  %d) %-20s  %s\n", i+1, r.Label, r.Description)
+		}
+		fmt.Printf("Select region [%d]: ", defaultIdx)
+		regionChoice, _ := reader.ReadString('\n')
+		regionChoice = strings.TrimSpace(regionChoice)
+		if regionChoice == "" {
+			regionChoice = fmt.Sprintf("%d", defaultIdx)
 		}
 		var baseURL string
-		switch region {
-		case "2":
-			baseURL = "https://eu.app.lumoauth.dev"
+		switch regionChoice {
+		case "1", "us", "US":
+			baseURL = config.RegionUS.ServerURL
+		case "2", "eu", "EU":
+			baseURL = config.RegionEU.ServerURL
+		case "3", "custom", "other":
+			defaultURL := ""
+			if existing != nil && config.RegionForURL(existing.BaseURL) == config.RegionCustom {
+				defaultURL = existing.BaseURL
+			}
+			prompt := "Server URL (e.g. https://localhost:8000)"
+			if defaultURL != "" {
+				prompt += fmt.Sprintf(" [%s]", defaultURL)
+			}
+			fmt.Print(prompt + ": ")
+			customURL, _ := reader.ReadString('\n')
+			customURL = strings.TrimSpace(customURL)
+			if customURL == "" {
+				customURL = defaultURL
+			}
+			if customURL == "" {
+				return fmt.Errorf("server URL is required for the Custom option")
+			}
+			baseURL = strings.TrimSuffix(customURL, "/")
 		default:
-			baseURL = "https://app.lumoauth.dev"
+			return fmt.Errorf("invalid selection %q — pick 1, 2, or 3", regionChoice)
 		}
 
 		cfg := &config.Config{

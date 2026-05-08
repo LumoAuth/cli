@@ -82,21 +82,19 @@ func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bo
 
 // Validate checks that required fields are set.
 //
-// Auth is satisfied EITHER by an API key (legacy / scriptable path) or by
-// stored device-flow credentials (`lumo login`). When the API key is empty,
-// we treat a non-expired credentials file at ~/.lumoauth/credentials.yaml as
-// equivalent — the api client will use its bearer token instead.
+// Auth is satisfied EITHER by stored device-flow credentials (`lumo login`)
+// or by an API key (legacy / scriptable path). The credentials file is the
+// preferred source whenever it's present and unexpired — see `client.New`
+// for the matching request-time precedence.
+//
+// We still allow a configured API key to satisfy auth on its own, because
+// users in scripts may not have run `lumo login` at all. But we always
+// consult the credentials file to fill in OrgID / BaseURL when the user
+// hasn't pinned them, so freshly-logged-in users don't have to repeat
+// `--org-id` on every command.
 func (c *Config) Validate() error {
-	if c.APIKey == "" {
-		creds, _ := LoadCredentials()
-		if creds == nil {
-			return fmt.Errorf("not authenticated. Run 'lumo login', or set --api-key / LUMO_API_KEY for scripted use")
-		}
-		if creds.IsExpired() {
-			return fmt.Errorf("stored credentials have expired. Run 'lumo login' to renew")
-		}
-		// Inherit org/base from credentials when not overridden — saves
-		// callers from passing --org-id every time.
+	creds, _ := LoadCredentials()
+	if creds != nil && !creds.IsExpired() {
 		if c.OrgID == "" {
 			c.OrgID = creds.OrgID
 		}
@@ -105,7 +103,13 @@ func (c *Config) Validate() error {
 				c.BaseURL = creds.BaseURL
 			}
 		}
+	} else if c.APIKey == "" {
+		if creds != nil && creds.IsExpired() {
+			return fmt.Errorf("stored credentials have expired. Run 'lumo login' to renew")
+		}
+		return fmt.Errorf("not authenticated. Run 'lumo login', or set --api-key / LUMO_API_KEY for scripted use")
 	}
+
 	if c.OrgID == "" {
 		return fmt.Errorf("organization ID is required. Set via --org-id flag, LUMO_ORG_ID env var, or 'lumo config init'")
 	}
@@ -135,6 +139,21 @@ func (c *Config) loadFile() error {
 		return err
 	}
 	return yaml.Unmarshal(data, c)
+}
+
+// LoadFromFile reads the config file without applying defaults or env/flag
+// overrides. Callers (e.g. `lumo login`) use this to detect whether the user
+// has explicitly configured a base URL, vs. relying on the built-in default.
+// Returns nil, nil when no file exists.
+func LoadFromFile() (*Config, error) {
+	cfg := &Config{}
+	if err := cfg.loadFile(); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return cfg, nil
 }
 
 // Save writes the config to the config file.

@@ -57,9 +57,20 @@ type PaginationMeta struct {
 	HasPreviousPage bool `json:"hasPreviousPage"`
 }
 
-// New creates a new API client from config. When the config has no API key
-// set, the client will look for ~/.lumoauth/credentials.yaml from a prior
-// `lumo login` and use the stored bearer token instead.
+// New creates a new API client from config.
+//
+// Auth precedence:
+//  1. If `lumo login` credentials exist, are unexpired, and target the same
+//     org as this request, use the bearer token. This is the per-user,
+//     auditable, revocable session — the right default whenever we have it.
+//  2. Otherwise fall back to a configured API key (lmk_…) for scripted use.
+//  3. Otherwise the request is unauthenticated and will fail at validate().
+//
+// The earlier "API key wins unconditionally" precedence caused a confusing
+// failure mode: a user who'd previously set up a key for org A and then ran
+// `lumo login` against org B would silently keep sending the org-A key to
+// org-B routes, and the server would reject with "Invalid API key" — even
+// though their device-flow credentials were perfectly valid for the route.
 func New(cfg *config.Config) *Client {
 	transport := &http.Transport{}
 	if cfg.Insecure {
@@ -74,21 +85,28 @@ func New(cfg *config.Config) *Client {
 		},
 	}
 
-	// Fall back to device-flow credentials only when no API key was supplied.
-	if cfg.APIKey == "" {
-		if creds, _ := config.LoadCredentials(); creds != nil && !creds.IsExpired() {
-			c.creds = creds
-			// If config didn't pin an org, take it from the credentials so
-			// the user doesn't have to repeat --org on every command.
-			if c.cfg.OrgID == "" {
-				c.cfg.OrgID = creds.OrgID
-			}
-			if c.cfg.BaseURL == "" || c.cfg.BaseURL == "https://app.lumoauth.dev" {
-				if creds.BaseURL != "" {
-					c.cfg.BaseURL = creds.BaseURL
-				}
-			}
+	creds, _ := config.LoadCredentials()
+	if creds == nil || creds.IsExpired() {
+		return c
+	}
+
+	// Inherit org/base from credentials when not pinned, so commands work
+	// without requiring --org-id when the user just ran `lumo login`.
+	if c.cfg.OrgID == "" {
+		c.cfg.OrgID = creds.OrgID
+	}
+	if c.cfg.BaseURL == "" || c.cfg.BaseURL == "https://app.lumoauth.dev" {
+		if creds.BaseURL != "" {
+			c.cfg.BaseURL = creds.BaseURL
 		}
+	}
+
+	// Only attach the bearer when the credentials actually belong to the
+	// org being addressed; otherwise the API key path stays in effect (and
+	// the request will succeed if the key is for the right tenant, or fail
+	// with a clear server-side tenant-mismatch otherwise).
+	if creds.OrgID == c.cfg.OrgID {
+		c.creds = creds
 	}
 
 	return c
@@ -173,11 +191,12 @@ func (c *Client) doRequest(method, fullURL string, body interface{}) (json.RawMe
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers — prefer API key, fall back to device-flow Bearer token.
-	if c.cfg.APIKey != "" {
-		req.Header.Set("X-API-Key", c.cfg.APIKey)
-	} else if c.creds != nil {
+	// Set headers — prefer device-flow Bearer (when it matches this org),
+	// otherwise fall back to the API key. See `New` for the rationale.
+	if c.creds != nil {
 		req.Header.Set("Authorization", "Bearer "+c.creds.AccessToken)
+	} else if c.cfg.APIKey != "" {
+		req.Header.Set("X-API-Key", c.cfg.APIKey)
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {
