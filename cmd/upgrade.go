@@ -50,14 +50,14 @@ version is available; 2 if a network/parse error prevented the check.`,
 		switch runtime.GOOS {
 		case "darwin":
 			fmt.Println("  brew upgrade lumoauth/lumo/lumo      # if installed via Homebrew")
-			fmt.Println("  curl -sSL https://lumoauth.com/install.sh | sh")
+			fmt.Println("  curl -sSL https://lumoauth.dev/install.sh | sh")
 		case "linux":
-			fmt.Println("  curl -sSL https://lumoauth.com/install.sh | sh")
+			fmt.Println("  curl -sSL https://lumoauth.dev/install.sh | sh")
 		case "windows":
 			fmt.Println("  scoop update lumo                    # if installed via Scoop")
 			fmt.Println("  winget upgrade --id LumoAuth.lumo    # if installed via winget")
 		default:
-			fmt.Println("  curl -sSL https://lumoauth.com/install.sh | sh")
+			fmt.Println("  curl -sSL https://lumoauth.dev/install.sh | sh")
 		}
 		fmt.Println()
 		if url != "" {

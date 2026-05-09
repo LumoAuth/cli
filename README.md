@@ -1,6 +1,6 @@
 # LumoAuth CLI
 
-A comprehensive command-line interface for managing your [LumoAuth](https://lumoauth.com) organization — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
+A comprehensive command-line interface for managing your [LumoAuth](https://lumoauth.dev) organization — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
 
 Designed for **org admins**, **AI coding agents**, and **developers building local-first** with LumoAuth.
 
