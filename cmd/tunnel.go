@@ -77,6 +77,7 @@ func runTunnel(cmd *cobra.Command, args []string) error {
 	req, _ := http.NewRequest("POST", startURL, nil)
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	resp, err := hc.Do(req)
 	if err != nil {
 		return fmt.Errorf("tunnel start: %w", err)
@@ -99,6 +100,7 @@ func runTunnel(cmd *cobra.Command, args []string) error {
 			strings.TrimRight(cfg.BaseURL, "/"), cfg.OrgID, webhookID)
 		stopReq, _ := http.NewRequest("POST", stopURL, nil)
 		stopReq.Header.Set("Authorization", auth)
+		stopReq.Header.Set("X-Requested-With", "XMLHttpRequest")
 		_, _ = hc.Do(stopReq)
 	}
 	defer cleanup()

@@ -109,6 +109,7 @@ func runDevStart(cmd *cobra.Command, args []string) error {
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
 	resp, err := devHTTPClient(cfg.Insecure).Do(req)
 	if err != nil {
@@ -157,6 +158,7 @@ func runDevStop(cmd *cobra.Command, args []string) error {
 	req, _ := http.NewRequest("POST", url, nil)
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
 	resp, err := devHTTPClient(cfg.Insecure).Do(req)
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -94,6 +95,15 @@ func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bo
 // `--org-id` on every command.
 func (c *Config) Validate() error {
 	creds, _ := LoadCredentials()
+	// Silently refresh when the access token has expired but a refresh
+	// token is on disk. The CLI's device-flow access tokens are only valid
+	// for an hour, so without this every command after the first hour fails
+	// even though the user's 30-day refresh token is perfectly usable.
+	// Failure here is not fatal — we fall through to the API-key path or
+	// the helpful error below.
+	if creds != nil && creds.IsExpired() {
+		_ = creds.EnsureFresh(c.Insecure)
+	}
 	if creds != nil && !creds.IsExpired() {
 		if c.OrgID == "" {
 			c.OrgID = creds.OrgID
@@ -104,16 +114,54 @@ func (c *Config) Validate() error {
 			}
 		}
 	} else if c.APIKey == "" {
-		if creds != nil && creds.IsExpired() {
-			return fmt.Errorf("stored credentials have expired. Run 'lumo login' to renew")
+		baseURL := c.BaseURL
+		orgID := c.OrgID
+		if creds != nil {
+			if baseURL == "" {
+				baseURL = creds.BaseURL
+			}
+			if orgID == "" {
+				orgID = creds.OrgID
+			}
 		}
-		return fmt.Errorf("not authenticated. Run 'lumo login', or set --api-key / LUMO_API_KEY for scripted use")
+		apiKeysURL := apiKeysSettingsURL(baseURL, orgID)
+		if creds != nil && creds.IsExpired() {
+			return fmt.Errorf(
+				"stored credentials have expired and refresh failed.\n"+
+					"  Re-authenticate with 'lumo login', or switch to a long-lived API key:\n"+
+					"    1. Generate one at %s\n"+
+					"    2. lumo config set api_key <key>   (or export LUMO_API_KEY=<key>)",
+				apiKeysURL,
+			)
+		}
+		return fmt.Errorf(
+			"not authenticated.\n"+
+				"  Run 'lumo login' for interactive use, or use a long-lived API key for scripts:\n"+
+				"    1. Generate one at %s\n"+
+				"    2. lumo config set api_key <key>   (or export LUMO_API_KEY=<key>)",
+			apiKeysURL,
+		)
 	}
 
 	if c.OrgID == "" {
 		return fmt.Errorf("organization ID is required. Set via --org-id flag, LUMO_ORG_ID env var, or 'lumo config init'")
 	}
 	return nil
+}
+
+// apiKeysSettingsURL builds the dashboard URL the user can visit to mint
+// a long-lived API key. Uses placeholders when the parts aren't known yet
+// so the message is still actionable.
+func apiKeysSettingsURL(baseURL, orgID string) string {
+	if baseURL == "" {
+		baseURL = "<base-url>"
+	} else {
+		baseURL = strings.TrimRight(baseURL, "/")
+	}
+	if orgID == "" {
+		orgID = "<org>"
+	}
+	return fmt.Sprintf("%s/orgs/%s/portal/settings/api-keys", baseURL, orgID)
 }
 
 // ConfigDir returns the config directory path.

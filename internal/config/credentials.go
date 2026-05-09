@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/lumoauth/cli/internal/auth"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,4 +85,34 @@ func (c *Credentials) IsExpired() bool {
 	}
 	// Consider expired 30s early to avoid mid-flight failures from clock skew.
 	return time.Now().Add(30 * time.Second).After(c.ExpiresAt)
+}
+
+// EnsureFresh refreshes the access token in place when expired and a refresh
+// token is available, persisting the rotated tokens to disk. No-op when the
+// token is still valid. Returns an error when there is no refresh token or
+// the refresh call fails — callers should treat that as "user must re-login
+// or fall back to API key".
+func (c *Credentials) EnsureFresh(insecure bool) error {
+	if !c.IsExpired() {
+		return nil
+	}
+	if c.RefreshToken == "" {
+		return fmt.Errorf("access token expired and no refresh token stored")
+	}
+
+	client := auth.New(c.BaseURL, c.OrgID, insecure)
+	tok, err := client.Refresh(c.RefreshToken)
+	if err != nil {
+		return err
+	}
+
+	c.AccessToken = tok.AccessToken
+	if tok.RefreshToken != "" {
+		c.RefreshToken = tok.RefreshToken
+	}
+	c.ExpiresAt = time.Now().Add(time.Duration(tok.ExpiresIn) * time.Second)
+	if tok.TokenType != "" {
+		c.TokenType = tok.TokenType
+	}
+	return c.Save()
 }

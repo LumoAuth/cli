@@ -86,6 +86,12 @@ func New(cfg *config.Config) *Client {
 	}
 
 	creds, _ := config.LoadCredentials()
+	if creds != nil && creds.IsExpired() {
+		// Best-effort silent refresh. If it fails we fall through to the
+		// API-key path; Validate() will have surfaced a clear error already
+		// when the user has neither.
+		_ = creds.EnsureFresh(cfg.Insecure)
+	}
 	if creds == nil || creds.IsExpired() {
 		return c
 	}
@@ -202,6 +208,9 @@ func (c *Client) doRequest(method, fullURL string, body interface{}) (json.RawMe
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	// CSRF defence-in-depth: admin API rejects cookie/Bearer state-changing
+	// requests without a custom header. Sending it unconditionally is safe.
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

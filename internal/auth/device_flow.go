@@ -115,6 +115,45 @@ func (c *Client) Start() (*DeviceAuthResponse, error) {
 	return &out, nil
 }
 
+// Refresh exchanges a refresh_token for a fresh access_token at the CLI
+// client's token endpoint. The server may rotate the refresh_token — when
+// the response carries a new one, callers should persist it.
+func (c *Client) Refresh(refreshToken string) (*TokenResponse, error) {
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+	form.Set("client_id", CliClientID)
+
+	endpoint := fmt.Sprintf("%s/orgs/%s/api/v1/oauth/token", c.BaseURL, c.OrgID)
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("build refresh request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refresh: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 200 {
+		var tok TokenResponse
+		if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
+			return nil, fmt.Errorf("decode refresh response: %w", err)
+		}
+		return &tok, nil
+	}
+
+	var oauthErr errResponse
+	_ = json.NewDecoder(resp.Body).Decode(&oauthErr)
+	if oauthErr.Error != "" {
+		return nil, fmt.Errorf("%s: %s", oauthErr.Error, oauthErr.ErrorDescription)
+	}
+	return nil, fmt.Errorf("refresh returned %d", resp.StatusCode)
+}
+
 // PollResult is what Poll returns at each iteration.
 type PollResult struct {
 	Token   *TokenResponse

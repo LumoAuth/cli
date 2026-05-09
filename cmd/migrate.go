@@ -298,6 +298,7 @@ func importOne(hc *http.Client, usersURL, auth string, u auth0User, dryRun bool)
 	req.Header.Set("Authorization", auth)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
 	resp, err := hc.Do(req)
 	if err != nil {

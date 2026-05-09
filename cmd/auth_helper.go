@@ -23,7 +23,11 @@ func authHeader(cfg *config.Config) (string, error) {
 		return "", fmt.Errorf("not authenticated; run 'lumo login'")
 	}
 	if creds.IsExpired() {
-		return "", fmt.Errorf("credentials expired; run 'lumo login'")
+		// Try the stored refresh token before giving up. The CLI's
+		// device-flow access tokens are 1h; the refresh token is 30d.
+		if refreshErr := creds.EnsureFresh(cfg.Insecure); refreshErr != nil {
+			return "", fmt.Errorf("credentials expired and refresh failed (%w); run 'lumo login' or set --api-key", refreshErr)
+		}
 	}
 	return "Bearer " + creds.AccessToken, nil
 }
