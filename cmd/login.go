@@ -40,6 +40,14 @@ Device Authorization Grant (RFC 8628). No API key required — the CLI
 opens a browser to the verification URL, you confirm in the dashboard,
 and credentials are stored at ~/.lumoauth/credentials.yaml.
 
+Credentials are written into the active profile (default: "default").
+Log in to a second org under a separate name with --profile:
+
+  lumo login --profile clientb --org clientb-corp
+
+and switch between them with 'lumo profile use <name>' (or per-command
+via --profile / LUMO_PROFILE).
+
 The well-known first-party client 'lumoauth-cli' is auto-provisioned
 on the server the first time you log in to a tenant.`,
 	RunE: runLogin,
@@ -47,12 +55,13 @@ on the server the first time you log in to a tenant.`,
 
 var logoutCmd = &cobra.Command{
 	Use:   "logout",
-	Short: "Clear stored credentials",
+	Short: "Clear the active profile's stored credentials",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := config.ClearCredentials(); err != nil {
+		name, err := config.ClearCredentials()
+		if err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "Logged out. ~/.lumoauth/credentials.yaml removed.")
+		fmt.Fprintf(os.Stderr, "Logged out. Profile %q removed from %s.\n", name, config.CredentialsPath())
 		return nil
 	},
 }
@@ -65,14 +74,16 @@ var whoamiCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if creds == nil {
-			fmt.Fprintln(os.Stderr, "Not logged in. Run 'lumo login' to sign in.")
+		profile := config.ActiveProfileName()
+		if !creds.HasToken() {
+			fmt.Fprintf(os.Stderr, "Not logged in (profile %q). Run 'lumo login' to sign in.\n", profile)
 			os.Exit(2)
 		}
 		if creds.IsExpired() {
-			fmt.Fprintln(os.Stderr, "Credentials expired. Run 'lumo login' to renew.")
+			fmt.Fprintf(os.Stderr, "Credentials expired (profile %q). Run 'lumo login' to renew.\n", profile)
 			os.Exit(2)
 		}
+		fmt.Printf("Profile:    %s\n", profile)
 		fmt.Printf("Org:        %s\n", creds.OrgID)
 		fmt.Printf("Base URL:   %s\n", creds.BaseURL)
 		if creds.UserEmail != "" {
@@ -167,7 +178,13 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		// Success — persist tokens.
+		// Success — persist tokens into the active profile (selectable via
+		// --profile / LUMO_PROFILE) and make it the current profile so the
+		// org just logged in to is what subsequent commands target.
+		profile := config.ActiveProfileName()
+		if err := config.ValidateProfileName(profile); err != nil {
+			return err
+		}
 		expiresAt := time.Now().Add(time.Duration(result.Token.ExpiresIn) * time.Second)
 		creds := &config.Credentials{
 			BaseURL:      baseURL,
@@ -177,11 +194,11 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			ExpiresAt:    expiresAt,
 			TokenType:    result.Token.TokenType,
 		}
-		if err := creds.Save(); err != nil {
+		if err := config.SaveProfile(profile, creds, true); err != nil {
 			return fmt.Errorf("save credentials: %w", err)
 		}
 
-		fmt.Fprintf(os.Stderr, "✓ Logged in to %s. Credentials saved at %s\n", orgID, config.CredentialsPath())
+		fmt.Fprintf(os.Stderr, "✓ Logged in to %s. Credentials saved to profile %q in %s\n", orgID, profile, config.CredentialsPath())
 		return nil
 	}
 }

@@ -68,7 +68,7 @@ download() {
 }
 
 verify_checksums() {
-    CHECKSUMS_FILE="cli_${VERSION#v}_checksums.txt"
+    CHECKSUMS_FILE="checksums.txt"
     CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/${CHECKSUMS_FILE}"
 
     info "Verifying checksum…"
@@ -100,7 +100,7 @@ verify_checksums() {
 }
 
 download_binary() {
-    TARBALL="cli_${OS}_${ARCH}.tar.gz"
+    TARBALL="lumo_${OS}_${ARCH}.tar.gz"
     URL="https://github.com/${REPO}/releases/download/${VERSION}/${TARBALL}"
 
     info "Downloading ${BINARY_NAME} ${VERSION} for ${OS}/${ARCH}…"
@@ -121,8 +121,8 @@ download_binary() {
     info "Extracting…"
     tar -xzf "${TMPDIR}/${TARBALL}" -C "$TMPDIR"
 
-    # GoReleaser puts the binary as 'cli' in the archive
-    if [ -f "${TMPDIR}/cli" ]; then
+    # Older releases shipped the binary as 'cli' inside the archive.
+    if [ ! -f "${TMPDIR}/${BINARY_NAME}" ] && [ -f "${TMPDIR}/cli" ]; then
         mv "${TMPDIR}/cli" "${TMPDIR}/${BINARY_NAME}"
     fi
 

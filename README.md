@@ -37,7 +37,28 @@ The full pre-existing surface (users, roles, groups, apps, agents, webhooks, per
 
 ## Installation
 
-### One-line install (recommended)
+### Package managers (recommended)
+
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install lumoauth/tap/lumo
+```
+
+**Scoop (Windows):**
+
+```powershell
+scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket
+scoop install lumo
+```
+
+**winget (Windows):**
+
+```powershell
+winget install --id LumoAuth.lumo
+```
+
+### One-line install script
 
 Works on **Linux**, **macOS**, and **Windows (WSL)** — no `sudo` required.
 
@@ -66,6 +87,23 @@ go build -o lumo .
 # Optional: install into $GOPATH/bin
 go install .
 ```
+
+### Upgrading
+
+```bash
+lumo upgrade            # detect install channel and upgrade in place
+lumo upgrade --check    # only report whether a newer version exists
+lumo upgrade --exec     # upgrade without a confirmation prompt
+```
+
+`lumo upgrade` detects how the binary was installed and uses the matching
+channel: Homebrew/Scoop/winget installs are upgraded through the package
+manager (so its state stays consistent), while manual installs
+(install.sh / hand-placed binaries) are self-updated — the release
+archive for your OS/arch is downloaded, verified against the release's
+`checksums.txt`, and swapped in atomically. On Windows, if the running
+`lumo.exe` can't be replaced while in use, the new version is staged as
+`lumo.exe.new` with printed instructions to finish the swap.
 
 ---
 
@@ -105,6 +143,37 @@ lumo users list
 
 API keys live at `https://<your-lumoauth>/orgs/<orgId>/portal/settings/api-keys`. Use scoped keys — create one per CI job, revoke when no longer needed.
 
+### Named profiles (multi-org)
+
+Work across multiple organizations or deployments (consultant with two
+clients, US + EU regions, prod + self-hosted) without re-authenticating:
+
+```bash
+lumo login --profile acme --org acme-corp        # first client
+lumo login --profile clientb --org clientb-corp  # second client
+
+lumo profile list                 # see all profiles (* marks the active one)
+lumo profile use acme             # switch the default
+lumo users list --profile clientb # one-off command against another profile
+LUMO_PROFILE=clientb lumo users list   # env-var selection (CI, direnv)
+
+lumo profile show [name]          # inspect a profile (tokens masked)
+lumo profile create staging --org-id acme-staging   # token-less profile for API-key use
+lumo profile delete clientb       # remove a profile and its tokens
+```
+
+Each profile stores its own `org_id`, `base_url`, and login tokens in
+`~/.lumoauth/credentials.yaml`. Profile selection precedence: `--profile`
+flag > `LUMO_PROFILE` env var > `current_profile` in the credentials file.
+The `--org-id` flag still overrides the profile's org for a single command.
+
+Existing single-profile credential files are migrated automatically on
+first use: your old credentials become the `default` profile and the
+original file is preserved at `~/.lumoauth/credentials.yaml.bak`.
+
+`lumo logout` clears only the active profile; other profiles keep their
+sessions.
+
 ### Configuration precedence
 
 | Priority | Method | Example |
@@ -127,13 +196,21 @@ insecure: false
 ```
 
 ```yaml
-# ~/.lumoauth/credentials.yaml — managed by `lumo login`/`logout` (0600)
-base_url: https://app.lumoauth.dev
-org_id: acme-corp
-access_token: eyJhbGciOi...
-refresh_token: ...
-expires_at: 2026-05-08T17:00:00Z
-token_type: Bearer
+# ~/.lumoauth/credentials.yaml — managed by `lumo login`/`logout`/`lumo profile` (0600)
+version: 2
+current_profile: acme
+profiles:
+  acme:
+    base_url: https://app.lumoauth.dev
+    org_id: acme-corp
+    access_token: eyJhbGciOi...
+    refresh_token: ...
+    expires_at: 2026-05-08T17:00:00Z
+    token_type: Bearer
+  clientb:
+    base_url: https://eu.app.lumoauth.dev
+    org_id: clientb-corp
+    access_token: ...
 ```
 
 Manage settings via:
@@ -154,6 +231,7 @@ lumo config set org_id acme-corp
 --api-key string    API key (overrides LUMO_API_KEY)
 --org-id string     Organization ID (overrides LUMO_ORG_ID)
 --base-url string   Base URL (overrides LUMO_BASE_URL)
+--profile string    Named credentials profile (overrides LUMO_PROFILE and current_profile)
 -o, --output string Output format: table, json, yaml (default: table)
 --insecure          Skip TLS verification (useful for local dev)
 -q, --quiet         Suppress non-essential output
@@ -163,12 +241,32 @@ lumo config set org_id acme-corp
 ### `login` / `logout` / `whoami`
 
 ```bash
-lumo login [--org acme-corp] [--no-browser] [--insecure]
+lumo login [--org acme-corp] [--profile name] [--no-browser] [--insecure]
 lumo logout
 lumo whoami
 ```
 
-`--no-browser` prints the verification URL instead of trying to open a browser — useful in headless or remote environments.
+`--no-browser` prints the verification URL instead of trying to open a browser — useful in headless or remote environments. `--profile` logs in to (or creates) a named profile; `logout` clears only the active profile.
+
+### `profile` — Named credential profiles
+
+```bash
+lumo profile list                # all profiles; * marks the active one
+lumo profile use <name>          # set the current profile
+lumo profile show [name]         # profile details (tokens masked)
+lumo profile create <name> [--org-id slug] [--base-url url] [--use]
+lumo profile delete <name> [-f]
+```
+
+See [Named profiles](#named-profiles-multi-org) for the full workflow.
+
+### `upgrade`
+
+```bash
+lumo upgrade [--check] [--exec]
+```
+
+Channel-aware upgrade — see [Upgrading](#upgrading).
 
 ### `dev` — Ephemeral sandbox tenants
 
@@ -426,6 +524,7 @@ echo "Sandbox $SLUG ready"
 | `LUMO_API_KEY` | Admin API key (`lmk_...`) | — |
 | `LUMO_ORG_ID` | Organization ID | — |
 | `LUMO_BASE_URL` | LumoAuth server URL | `https://app.lumoauth.dev` (US) |
+| `LUMO_PROFILE` | Named credentials profile | `current_profile` from credentials.yaml |
 | `LUMO_OUTPUT_FORMAT` | Default output format | `table` |
 | `LUMO_INSECURE` | Skip TLS verification (`true`/`1`) | `false` |
 | `LUMO_CONFIG_DIR` | Custom config directory | `~/.lumoauth` |
@@ -469,11 +568,38 @@ Each API key has granular scopes that control access. Device-flow logins inherit
 
 **Browser doesn't open during `lumo login`** — pass `--no-browser` and copy the verification URL by hand. The flow still works.
 
-**`stored credentials have expired`** — run `lumo login` again. The CLI does not currently auto-refresh; this lands in a future release.
+**`stored credentials have expired`** — the CLI auto-refreshes with the stored refresh token; this error means the refresh token itself expired or was revoked. Run `lumo login` again (add `--profile <name>` if the expired credentials belong to a non-default profile).
 
 **Webhooks don't show up in `lumo tunnel`** — check `lumo webhooks list` for any *other* webhooks subscribed to the same events; the dispatcher fires every subscriber. The tunnel still receives them, but make sure you're reproducing the action that triggers the event.
 
 **`lumo dev stop` says "does not own this sandbox"** — sandboxes are owned by the user who created them. If a teammate spawned it, ask them to destroy it (or wait for the cleanup cron to expire it).
+
+---
+
+## Releasing
+
+Releases are cut with [GoReleaser](https://goreleaser.com) (config:
+`.goreleaser.yaml`, schema v1). Tagging `vX.Y.Z` builds the archive
+matrix, publishes the GitHub release with `checksums.txt`, and pushes
+package-manager manifests:
+
+- **Homebrew** — formula committed to `lumoauth/homebrew-tap` (`Formula/lumo.rb`), with shell completions generated from the binary.
+- **Scoop** — manifest committed to `lumoauth/scoop-bucket`.
+- **winget** — manifest pushed to the `lumoauth/winget-pkgs` fork on a per-version branch, with an automatic PR to `microsoft/winget-pkgs`.
+
+Pre-releases (`-rc.*` etc.) skip all three (`skip_upload: auto`).
+
+### One-time setup (before the first release with package managers)
+
+1. **Create the distribution repos** under the `lumoauth` org:
+   - `lumoauth/homebrew-tap` — empty public repo, default branch `main` (GoReleaser creates `Formula/lumo.rb`).
+   - `lumoauth/scoop-bucket` — empty public repo, default branch `main`.
+   - `lumoauth/winget-pkgs` — a fork of [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs). Keep the fork's `master` synced (GoReleaser branches from it).
+2. **Provision the release token.** The `GITHUB_TOKEN` used by the release workflow must be able to push to those three repos — the default Actions token can't push outside its own repo, so use a PAT (classic: `repo` scope; fine-grained: contents read/write on the tap, bucket, and fork, plus pull-request write for winget) stored as a repo/org secret and exported as `GITHUB_TOKEN` for the goreleaser step.
+3. **First winget submission**: the very first `LumoAuth.lumo` PR to `microsoft/winget-pkgs` goes through manual moderation — expect a human review pass before it's merged; subsequent version PRs are largely automated.
+
+Validate config changes locally with `goreleaser check` (use a GoReleaser
+v1.x binary — the config is schema `version: 1`).
 
 ---
 
@@ -483,12 +609,14 @@ Each API key has granular scopes that control access. Device-flow logins inherit
 cli/
 ├── main.go                            # Entry point
 ├── go.mod
-├── .goreleaser.yaml                   # Build matrix + ldflags
+├── .goreleaser.yaml                   # Build matrix, ldflags, brew/scoop/winget publishing
 ├── install.sh                         # One-line install script
 ├── cmd/
 │   ├── root.go                        # Root command, global flags, exit codes
 │   ├── version.go                     # `lumo version` / `--version`
 │   ├── login.go                       # `lumo login/logout/whoami`
+│   ├── profile.go                     # `lumo profile list/use/create/delete/show`
+│   ├── upgrade.go                     # `lumo upgrade` (channel-aware self-update)
 │   ├── dev.go                         # `lumo dev start/stop/list`
 │   ├── tunnel.go                      # `lumo tunnel`
 │   ├── init.go                        # `lumo init --framework ...`
@@ -503,8 +631,9 @@ cli/
 └── internal/
     ├── auth/device_flow.go            # RFC 8628 device flow client
     ├── config/config.go               # Settings (config.yaml)
-    ├── config/credentials.go          # Tokens (credentials.yaml)
+    ├── config/credentials.go          # Multi-profile tokens (credentials.yaml)
     ├── client/client.go               # HTTP client w/ Bearer + ApiKey fallback
+    ├── upgrade/upgrade.go             # Install-channel detection, checksum verify, self-replace
     └── output/output.go               # Table/JSON/YAML output
 ```
 

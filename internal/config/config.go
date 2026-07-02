@@ -16,11 +16,11 @@ const (
 
 // Config holds all CLI configuration.
 type Config struct {
-	APIKey  string `yaml:"api_key" json:"api_key"`
-	OrgID   string `yaml:"org_id" json:"org_id"`
-	BaseURL string `yaml:"base_url" json:"base_url"`
-	Format  string `yaml:"format" json:"format"`
-	Insecure bool  `yaml:"insecure" json:"insecure"`
+	APIKey   string `yaml:"api_key" json:"api_key"`
+	OrgID    string `yaml:"org_id" json:"org_id"`
+	BaseURL  string `yaml:"base_url" json:"base_url"`
+	Format   string `yaml:"format" json:"format"`
+	Insecure bool   `yaml:"insecure" json:"insecure"`
 }
 
 // Load resolves configuration with precedence: flags > env > file.
@@ -101,10 +101,13 @@ func (c *Config) Validate() error {
 	// even though the user's 30-day refresh token is perfectly usable.
 	// Failure here is not fatal — we fall through to the API-key path or
 	// the helpful error below.
-	if creds != nil && creds.IsExpired() {
+	if creds.HasToken() && creds.IsExpired() {
 		_ = creds.EnsureFresh(c.Insecure)
 	}
-	if creds != nil && !creds.IsExpired() {
+	// Inherit org/base URL from the active profile whenever it pins them —
+	// even token-less profiles (created via `lumo profile create`) provide
+	// this context so an API key + profile combination works without --org-id.
+	if creds != nil {
 		if c.OrgID == "" {
 			c.OrgID = creds.OrgID
 		}
@@ -113,7 +116,8 @@ func (c *Config) Validate() error {
 				c.BaseURL = creds.BaseURL
 			}
 		}
-	} else if c.APIKey == "" {
+	}
+	if !(creds.HasToken() && !creds.IsExpired()) && c.APIKey == "" {
 		baseURL := c.BaseURL
 		orgID := c.OrgID
 		if creds != nil {
@@ -125,7 +129,7 @@ func (c *Config) Validate() error {
 			}
 		}
 		apiKeysURL := apiKeysSettingsURL(baseURL, orgID)
-		if creds != nil && creds.IsExpired() {
+		if creds.HasToken() && creds.IsExpired() {
 			return fmt.Errorf(
 				"stored credentials have expired and refresh failed.\n"+
 					"  Re-authenticate with 'lumo login', or switch to a long-lived API key:\n"+

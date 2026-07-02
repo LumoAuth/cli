@@ -86,18 +86,19 @@ func New(cfg *config.Config) *Client {
 	}
 
 	creds, _ := config.LoadCredentials()
-	if creds != nil && creds.IsExpired() {
+	if creds.HasToken() && creds.IsExpired() {
 		// Best-effort silent refresh. If it fails we fall through to the
 		// API-key path; Validate() will have surfaced a clear error already
 		// when the user has neither.
 		_ = creds.EnsureFresh(cfg.Insecure)
 	}
-	if creds == nil || creds.IsExpired() {
+	if creds == nil {
 		return c
 	}
 
-	// Inherit org/base from credentials when not pinned, so commands work
-	// without requiring --org-id when the user just ran `lumo login`.
+	// Inherit org/base from the active profile when not pinned, so commands
+	// work without requiring --org-id when the user just ran `lumo login`
+	// (or created a token-less profile pinning the org for API-key use).
 	if c.cfg.OrgID == "" {
 		c.cfg.OrgID = creds.OrgID
 	}
@@ -107,11 +108,12 @@ func New(cfg *config.Config) *Client {
 		}
 	}
 
-	// Only attach the bearer when the credentials actually belong to the
-	// org being addressed; otherwise the API key path stays in effect (and
-	// the request will succeed if the key is for the right tenant, or fail
-	// with a clear server-side tenant-mismatch otherwise).
-	if creds.OrgID == c.cfg.OrgID {
+	// Only attach the bearer when the profile holds a live token AND the
+	// credentials actually belong to the org being addressed; otherwise the
+	// API key path stays in effect (and the request will succeed if the key
+	// is for the right tenant, or fail with a clear server-side
+	// tenant-mismatch otherwise).
+	if creds.HasToken() && !creds.IsExpired() && creds.OrgID == c.cfg.OrgID {
 		c.creds = creds
 	}
 

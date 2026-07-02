@@ -51,6 +51,91 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
+# --- Package-manager distribution -------------------------------------------
+# One-time human setup required before the first release with these blocks:
+#   1. Create the (empty) GitHub repos lumoauth/homebrew-tap and
+#      lumoauth/scoop-bucket, and fork microsoft/winget-pkgs to
+#      lumoauth/winget-pkgs.
+#   2. Give the release workflow a GITHUB_TOKEN (classic PAT or fine-grained)
+#      with `repo` (contents: write) on the tap/bucket repos and the
+#      winget-pkgs fork — the default Actions token can't push to other repos.
+# See README.md "Releasing" for details.
+
+brews:
+  - name: lumo
+    repository:
+      owner: lumoauth
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://lumoauth.dev"
+    description: "LumoAuth CLI — manage your organization's identity infrastructure"
+    commit_author:
+      name: lumoauth-bot
+      email: bot@lumoauth.dev
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    install: |
+      bin.install "lumo"
+      generate_completions_from_executable(bin/"lumo", "completion")
+    test: |
+      assert_match version.to_s, shell_output("#{bin}/lumo --version")
+    caveats: |
+      Get started with:
+        lumo login --org <your-org-slug>
+    # Don't publish formulae for release candidates / pre-releases.
+    skip_upload: auto
+
+scoops:
+  - name: lumo
+    repository:
+      owner: lumoauth
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.GITHUB_TOKEN }}"
+    homepage: "https://lumoauth.dev"
+    description: "LumoAuth CLI — manage your organization's identity infrastructure"
+    license: Proprietary
+    commit_author:
+      name: lumoauth-bot
+      email: bot@lumoauth.dev
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    skip_upload: auto
+
+winget:
+  - name: lumo
+    package_identifier: LumoAuth.lumo
+    publisher: LumoAuth
+    publisher_url: "https://lumoauth.dev"
+    publisher_support_url: "https://github.com/lumoauth/cli/issues"
+    short_description: "LumoAuth CLI — manage your organization's identity infrastructure"
+    license: Proprietary
+    homepage: "https://lumoauth.dev"
+    commit_author:
+      name: lumoauth-bot
+      email: bot@lumoauth.dev
+    commit_msg_template: "New version: {{ .PackageIdentifier }} {{ .Version }}"
+    tags:
+      - cli
+      - auth
+      - oauth
+      - oidc
+      - identity
+    # Publish via PR from our fork to microsoft/winget-pkgs.
+    repository:
+      owner: lumoauth
+      name: winget-pkgs
+      branch: "{{ .ProjectName }}-{{ .Version }}"
+      token: "{{ .Env.GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: auto
+
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
 

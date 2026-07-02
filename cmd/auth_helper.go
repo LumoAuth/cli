@@ -19,7 +19,7 @@ func authHeader(cfg *config.Config) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if creds == nil {
+	if !creds.HasToken() {
 		return "", fmt.Errorf("not authenticated; run 'lumo login'")
 	}
 	if creds.IsExpired() {

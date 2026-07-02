@@ -15,6 +15,7 @@ var (
 	flagOrgID    string
 	flagBaseURL  string
 	flagFormat   string
+	flagProfile  string
 	flagInsecure bool
 	flagQuiet    bool
 	flagVerbose  bool
@@ -45,6 +46,13 @@ Examples:
   lumo api GET /orgs/<orgId>/api/v1/admin/users`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
+	// PersistentPreRun runs after flag parsing for every subcommand — the
+	// earliest point where the --profile flag value is known. The config
+	// package resolves the active profile as flag > LUMO_PROFILE env >
+	// current_profile in ~/.lumoauth/credentials.yaml.
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		config.SetProfileOverride(flagProfile)
+	},
 }
 
 // Execute runs the root command.
@@ -78,6 +86,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagAPIKey, "api-key", "", "LumoAuth API key (overrides LUMO_API_KEY)")
 	rootCmd.PersistentFlags().StringVar(&flagOrgID, "org-id", "", "Organization ID (overrides LUMO_ORG_ID)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "", "Base URL (overrides LUMO_BASE_URL)")
+	rootCmd.PersistentFlags().StringVar(&flagProfile, "profile", "", "Named credentials profile (overrides LUMO_PROFILE and current_profile)")
 	rootCmd.PersistentFlags().StringVarP(&flagFormat, "output", "o", "", "Output format: table, json, yaml (default: table)")
 	rootCmd.PersistentFlags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification")
 	rootCmd.PersistentFlags().BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
