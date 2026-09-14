@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import session from "express-session";
 import cookieParser from "cookie-parser";
-import { lumoAuthMiddleware, requireAuth } from "@lumoauth/sdk/express";
+import { lumoAuthMiddleware, requireAuth } from "@lumoauth/express";
 
 const app = express();
 app.use(cookieParser());

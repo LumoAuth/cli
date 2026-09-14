@@ -36,7 +36,7 @@ var mcpServersListCmd = &cobra.Command{
 		}
 		p := getPrinter()
 
-		resp, err := c.Get("/admin/mcp/servers", nil)
+		resp, err := c.Get("/mcp/servers", nil)
 		if err != nil {
 			return err
 		}
@@ -123,7 +123,7 @@ the MCP server advertises.`,
 		}
 
 		// 1. Look up the MCP server to find its endpoint_url + scopes.
-		serverResp, err := c.Get(fmt.Sprintf("/admin/mcp/servers/%s", url.PathEscape(serverID)), nil)
+		serverResp, err := c.Get(fmt.Sprintf("/mcp/servers/%s", url.PathEscape(serverID)), nil)
 		if err != nil {
 			return fmt.Errorf("could not load MCP server %s: %w", serverID, err)
 		}
@@ -154,7 +154,7 @@ the MCP server advertises.`,
 		if scope != "" {
 			mintBody["scope"] = scope
 		}
-		tokenResp, err := c.Post(fmt.Sprintf("/admin/agents/%s/token", url.PathEscape(agentID)), mintBody)
+		tokenResp, err := c.Post(fmt.Sprintf("/agents/%s/token", url.PathEscape(agentID)), mintBody)
 		if err != nil {
 			return fmt.Errorf("could not mint agent token: %w", err)
 		}

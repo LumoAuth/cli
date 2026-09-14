@@ -1,4 +1,4 @@
-import { LumoAuthProvider } from "@lumoauth/react";
+import { LumoAuthProvider } from "@lumoauth/nextjs";
 import type { ReactNode } from "react";
 
 export default function RootLayout({ children }: { children: ReactNode }) {

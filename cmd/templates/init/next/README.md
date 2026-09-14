@@ -14,11 +14,11 @@ Then visit http://localhost:3000 and sign in.
 
 ## What's wired
 
-- `app/layout.tsx` — wraps everything in `<LumoAuthProvider>` from `@lumoauth/react`.
+- `app/layout.tsx` — wraps everything in `<LumoAuthProvider>` from `@lumoauth/nextjs`.
 - `app/page.tsx` — gates the page on `useLumoAuth().isAuthenticated`, renders
   `<SignIn />` when not authenticated and `<UserButton />` when signed in.
 - `app/auth/callback/page.tsx` — OAuth code-exchange page that mounts the
-  `<AuthCallback />` component from `@lumoauth/react` (PKCE flow handled
+  `<AuthCallback />` component from `@lumoauth/nextjs` (PKCE flow handled
   client-side; redirects to `/` after sign-in).
 - `.env.local` — base URL + org slug pre-filled from your `lumo login` session.
 

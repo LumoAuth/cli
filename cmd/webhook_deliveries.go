@@ -39,7 +39,7 @@ var webhooksDeliveriesListCmd = &cobra.Command{
 			q.Set("limit", fmt.Sprintf("%d", v))
 		}
 
-		resp, err := c.Get(fmt.Sprintf("/admin/webhooks/%s/deliveries", url.PathEscape(args[0])), q)
+		resp, err := c.Get(fmt.Sprintf("/webhooks/%s/deliveries", url.PathEscape(args[0])), q)
 		if err != nil {
 			return err
 		}
@@ -80,7 +80,7 @@ var webhooksDeliveriesGetCmd = &cobra.Command{
 		}
 		p := getPrinter()
 
-		path := fmt.Sprintf("/admin/webhooks/%s/deliveries/%s",
+		path := fmt.Sprintf("/webhooks/%s/deliveries/%s",
 			url.PathEscape(args[0]), url.PathEscape(args[1]))
 		resp, err := c.Get(path, nil)
 		if err != nil {
@@ -102,7 +102,7 @@ var webhooksDeliveriesReplayCmd = &cobra.Command{
 		}
 		p := getPrinter()
 
-		path := fmt.Sprintf("/admin/webhooks/%s/deliveries/%s/replay",
+		path := fmt.Sprintf("/webhooks/%s/deliveries/%s/replay",
 			url.PathEscape(args[0]), url.PathEscape(args[1]))
 		resp, err := c.Post(path, nil)
 		if err != nil {

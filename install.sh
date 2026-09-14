@@ -71,16 +71,21 @@ verify_checksums() {
     CHECKSUMS_FILE="checksums.txt"
     CHECKSUMS_URL="https://github.com/${REPO}/releases/download/${VERSION}/${CHECKSUMS_FILE}"
 
+    if [ "${LUMO_SKIP_CHECKSUM:-}" = "1" ]; then
+        warn "LUMO_SKIP_CHECKSUM=1 set — skipping checksum verification."
+        return 0
+    fi
+
     info "Verifying checksum…"
     if ! download "$CHECKSUMS_URL" "${TMPDIR}/${CHECKSUMS_FILE}" 2>/dev/null; then
-        warn "Could not download checksums file — skipping verification."
-        return 0
+        error "Could not download checksums file: ${CHECKSUMS_URL}
+  Refusing to install an unverified binary. Set LUMO_SKIP_CHECKSUM=1 to bypass."
     fi
 
     EXPECTED=$(grep "${TARBALL}" "${TMPDIR}/${CHECKSUMS_FILE}" | awk '{print $1}')
     if [ -z "$EXPECTED" ]; then
-        warn "No checksum found for ${TARBALL} — skipping verification."
-        return 0
+        error "No checksum found for ${TARBALL} in ${CHECKSUMS_FILE}.
+  Refusing to install an unverified binary. Set LUMO_SKIP_CHECKSUM=1 to bypass."
     fi
 
     if command -v sha256sum >/dev/null 2>&1; then
@@ -88,8 +93,8 @@ verify_checksums() {
     elif command -v shasum >/dev/null 2>&1; then
         ACTUAL=$(shasum -a 256 "${TMPDIR}/${TARBALL}" | awk '{print $1}')
     else
-        warn "Neither sha256sum nor shasum found — skipping verification."
-        return 0
+        error "Neither sha256sum nor shasum found — cannot verify the download.
+  Install one of them or set LUMO_SKIP_CHECKSUM=1 to bypass."
     fi
 
     if [ "$EXPECTED" != "$ACTUAL" ]; then

@@ -1,6 +1,6 @@
 "use client";
 
-import { SignIn, UserButton, useLumoAuth } from "@lumoauth/react";
+import { SignIn, UserButton, useLumoAuth } from "@lumoauth/nextjs";
 
 export default function Home() {
   const { isAuthenticated, user } = useLumoAuth();
