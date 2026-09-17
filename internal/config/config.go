@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,9 +10,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// ErrNotAuthenticated is wrapped by every "no usable credential" error so the
+// command layer can map it to the auth exit code (2) like a server 401.
+var ErrNotAuthenticated = errors.New("not authenticated")
+
 const (
 	DefaultConfigDir  = ".lumoauth"
 	DefaultConfigFile = "config.yaml"
+	// DefaultBaseURL is the hosted US region; `lumo login` offers EU / custom.
+	DefaultBaseURL = "https://app.lumoauth.dev"
 )
 
 // Config holds all CLI configuration.
@@ -40,7 +47,10 @@ func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bo
 	if v := os.Getenv("LUMO_API_KEY"); v != "" {
 		cfg.APIKey = v
 	}
-	if v := os.Getenv("LUMO_ORG_ID"); v != "" {
+	// LUMO_ORG is the documented name; LUMO_ORG_ID is kept for existing scripts.
+	if v := os.Getenv("LUMO_ORG"); v != "" {
+		cfg.OrgID = v
+	} else if v := os.Getenv("LUMO_ORG_ID"); v != "" {
 		cfg.OrgID = v
 	}
 	if v := os.Getenv("LUMO_BASE_URL"); v != "" {
@@ -72,7 +82,7 @@ func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bo
 
 	// Defaults
 	if cfg.BaseURL == "" {
-		cfg.BaseURL = "https://app.lumoauth.dev"
+		cfg.BaseURL = DefaultBaseURL
 	}
 	if cfg.Format == "" {
 		cfg.Format = "table"
@@ -111,7 +121,7 @@ func (c *Config) Validate() error {
 		if c.OrgID == "" {
 			c.OrgID = creds.OrgID
 		}
-		if c.BaseURL == "" || c.BaseURL == "https://app.lumoauth.dev" {
+		if c.BaseURL == "" || c.BaseURL == DefaultBaseURL {
 			if creds.BaseURL != "" {
 				c.BaseURL = creds.BaseURL
 			}
@@ -131,24 +141,24 @@ func (c *Config) Validate() error {
 		apiKeysURL := apiKeysSettingsURL(baseURL, orgID)
 		if creds.HasToken() && creds.IsExpired() {
 			return fmt.Errorf(
-				"stored credentials have expired and refresh failed.\n"+
+				"%w: stored credentials have expired and refresh failed.\n"+
 					"  Re-authenticate with 'lumo login', or switch to a long-lived API key:\n"+
 					"    1. Generate one at %s\n"+
 					"    2. lumo config set api_key <key>   (or export LUMO_API_KEY=<key>)",
-				apiKeysURL,
+				ErrNotAuthenticated, apiKeysURL,
 			)
 		}
 		return fmt.Errorf(
-			"not authenticated.\n"+
+			"%w.\n"+
 				"  Run 'lumo login' for interactive use, or use a long-lived API key for scripts:\n"+
 				"    1. Generate one at %s\n"+
 				"    2. lumo config set api_key <key>   (or export LUMO_API_KEY=<key>)",
-			apiKeysURL,
+			ErrNotAuthenticated, apiKeysURL,
 		)
 	}
 
 	if c.OrgID == "" {
-		return fmt.Errorf("organization ID is required. Set via --org-id flag, LUMO_ORG_ID env var, or 'lumo config init'")
+		return fmt.Errorf("organization slug is required. Pass --org <slug>, set LUMO_ORG, or run 'lumo login --org <slug>'")
 	}
 	return nil
 }

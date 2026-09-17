@@ -26,6 +26,28 @@ import (
 // server. The server resolves it to a per-tenant suffixed client transparently.
 const CliClientID = "lumoauth-cli"
 
+// AdminScope is the blanket Admin API scope. The Admin API accepts an OAuth
+// access token only when it carries `admin` or a resource scope of the form
+// `admin:<resource>:<read|write>`, in addition to the user's own permissions.
+const AdminScope = "admin"
+
+// DefaultScopes is what `lumo login` requests unless --scope narrows it:
+// identity claims for `whoami`, plus the blanket admin scope so every `lumo`
+// resource command works. Least-privilege sessions request e.g.
+// `openid admin:users:read` instead.
+var DefaultScopes = []string{"openid", "profile", "email", AdminScope}
+
+// SplitScopes turns a space- or comma-separated scope string into a list.
+func SplitScopes(s string) []string {
+	var out []string
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == ',' }) {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 // DeviceCodeGrant is the standard RFC 8628 grant type identifier.
 const DeviceCodeGrant = "urn:ietf:params:oauth:grant-type:device_code"
 
@@ -81,9 +103,17 @@ func New(baseURL, orgID string, insecure bool) *Client {
 // Start issues the device authorization request. The returned response
 // contains the device_code (used for polling) and the user_code +
 // verification_uri (shown to the user).
-func (c *Client) Start() (*DeviceAuthResponse, error) {
+//
+// Scopes are always sent explicitly (RFC 8628 §3.1) so the resulting token
+// carries exactly what the user asked for; with no scope parameter the server
+// would grant the client's whole allowed list.
+func (c *Client) Start(scopes []string) (*DeviceAuthResponse, error) {
 	form := url.Values{}
 	form.Set("client_id", CliClientID)
+	if len(scopes) == 0 {
+		scopes = DefaultScopes
+	}
+	form.Set("scope", strings.Join(scopes, " "))
 
 	endpoint := fmt.Sprintf("%s/orgs/%s/api/v1/oauth/device_authorization", c.BaseURL, c.OrgID)
 	req, err := http.NewRequest("POST", endpoint, strings.NewReader(form.Encode()))

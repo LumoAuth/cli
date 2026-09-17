@@ -1,3 +1,17 @@
+// Package client is the single HTTP path every `lumo` command uses to talk
+// to LumoAuth. It owns credential precedence, silent token refresh, the
+// headers the Admin API expects, and the translation of API errors into
+// actionable messages.
+//
+// Credential precedence (see New):
+//  1. `lumo login` device-flow token for the org being addressed.
+//  2. A configured API key (`lmk_…`) for scripted use.
+//  3. Nothing — the request fails at config validation with a clear hint.
+//
+// Both credential classes are stateless on the server: no session cookie is
+// ever issued, so the credential is sent on every request and scopes are
+// enforced per resource. When the server answers 403 with the scopes it
+// wanted, the error carries a hint that says exactly how to get them.
 package client
 
 import (
@@ -8,36 +22,176 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/lumoauth/cli/internal/config"
 )
 
-// Client wraps HTTP interactions with the LumoAuth Admin API.
+// AuthMethod names the credential class a Client will send.
+type AuthMethod string
+
+const (
+	AuthNone   AuthMethod = "none"
+	AuthToken  AuthMethod = "token"   // device-flow OAuth access token (lumo login)
+	AuthAPIKey AuthMethod = "api-key" // organization API key (lmk_…)
+)
+
+// Client wraps HTTP interactions with the LumoAuth APIs.
 type Client struct {
 	cfg        *config.Config
-	creds      *config.Credentials // optional; used when no API key configured
+	creds      *config.Credentials // set when a live token for this org is in use
 	httpClient *http.Client
+	method     AuthMethod
 }
 
-// APIError represents a structured error from the API.
+// APIError is a structured error from the API, enriched with a hint that
+// tells the user what to do next.
 type APIError struct {
 	StatusCode int
-	Message    string      `json:"message"`
-	Error_     string      `json:"error"`
-	Details    interface{} `json:"details,omitempty"`
+	Code       string
+	Message    string
+	Details    map[string]interface{}
+	// OAuth-style envelope ({error, error_description}) used by the OAuth and
+	// agent endpoints.
+	ErrorDescription string
+	// Method/path of the failed request, for hints.
+	Method string
+	Path   string
+	// Auth the client sent, for hints.
+	Auth AuthMethod
+	// BaseURL/OrgID for building portal links in hints.
+	BaseURL string
+	OrgID   string
 }
 
 func (e *APIError) Error() string {
 	msg := e.Message
 	if msg == "" {
-		msg = e.Error_
+		msg = e.ErrorDescription
+	}
+	if msg == "" && e.Code != "" && e.Code != "true" {
+		msg = e.Code
 	}
 	if msg == "" {
-		msg = fmt.Sprintf("HTTP %d", e.StatusCode)
+		return fmt.Sprintf("HTTP %d", e.StatusCode)
 	}
-	return msg
+	if e.Code != "" && e.Code != "true" && !strings.EqualFold(e.Code, msg) {
+		return fmt.Sprintf("%s (HTTP %d %s)", msg, e.StatusCode, e.Code)
+	}
+	return fmt.Sprintf("%s (HTTP %d)", msg, e.StatusCode)
+}
+
+// RequiredScopes returns the scopes the server said were missing, if any.
+func (e *APIError) RequiredScopes() []string {
+	return e.detailStrings("required_scopes", "required_scope")
+}
+
+// GrantedScopes returns the scopes the server saw on the credential, if any.
+func (e *APIError) GrantedScopes() []string {
+	return e.detailStrings("granted_scopes", "key_scopes")
+}
+
+// RejectedKeys returns `details.rejected_keys` for a 400 on the organization
+// settings endpoint.
+func (e *APIError) RejectedKeys() []string {
+	return e.detailStrings("rejected_keys")
+}
+
+func (e *APIError) detailStrings(keys ...string) []string {
+	if e.Details == nil {
+		return nil
+	}
+	for _, k := range keys {
+		switch v := e.Details[k].(type) {
+		case []interface{}:
+			out := make([]string, 0, len(v))
+			for _, s := range v {
+				if str, ok := s.(string); ok {
+					out = append(out, str)
+				}
+			}
+			sort.Strings(out)
+			return out
+		case string:
+			return []string{v}
+		}
+	}
+	return nil
+}
+
+// Hint returns a one-or-two-line, actionable next step for this error, or
+// "" when there is nothing useful to add.
+func (e *APIError) Hint() string {
+	portalKeys := apiKeysURL(e.BaseURL, e.OrgID)
+	switch e.StatusCode {
+	case 401:
+		switch e.Auth {
+		case AuthAPIKey:
+			return "The API key was rejected. Check LUMO_API_KEY / --api-key, that it belongs to organization '" + orDefault(e.OrgID, "<org>") + "', and that it has not been revoked. Create a new one at " + portalKeys
+		case AuthToken:
+			return "Your login has expired or was revoked. Run 'lumo login' again."
+		default:
+			return "Not authenticated. Run 'lumo login' for interactive use, or set LUMO_API_KEY for scripts."
+		}
+	case 403:
+		if req := e.RequiredScopes(); len(req) > 0 {
+			granted := e.GrantedScopes()
+			g := "none"
+			if len(granted) > 0 {
+				g = strings.Join(granted, " ")
+			}
+			switch e.Auth {
+			case AuthAPIKey:
+				return fmt.Sprintf("This API key lacks the scope(s) %s (it has: %s). Create a key with those scopes at %s — read scopes never authorise writes.", strings.Join(req, ", "), g, portalKeys)
+			case AuthToken:
+				return fmt.Sprintf("Your login token lacks the scope(s) %s (it has: %s). Re-authenticate with 'lumo login --scope %s' (or the blanket 'admin' scope). If the server refuses the scope, an administrator must allow it on the 'lumoauth-cli' OAuth client.", strings.Join(req, ", "), g, strings.Join(req, ","))
+			}
+			return "Missing scope(s): " + strings.Join(req, ", ")
+		}
+		lower := strings.ToLower(e.Message)
+		switch {
+		case strings.Contains(lower, "settings.manage") || strings.Contains(lower, "admin privileges"):
+			return "The signed-in user is not an administrator of this organization (needs the settings.manage permission). Ask an admin to grant it, or use an organization API key."
+		case strings.Contains(lower, "admin") && strings.Contains(lower, "scope"):
+			if e.Auth == AuthToken {
+				return "This token has no admin scope. Run 'lumo login' again (the CLI requests the 'admin' scope by default), or use an organization API key for scripts."
+			}
+			return "This API key has no admin scope for this operation. Create a key with the right admin:<resource>:<read|write> scopes at " + portalKeys
+		case strings.Contains(lower, "cross-tenant") || strings.Contains(lower, "tenant"):
+			return "The credential belongs to a different organization than --org '" + orDefault(e.OrgID, "<org>") + "'. Check 'lumo whoami' and 'lumo profile list'."
+		case strings.Contains(lower, "csrf"):
+			return "The server expected a same-origin witness; this is a CLI bug — please report it with 'lumo --version'."
+		}
+		return "Permission denied. Run 'lumo doctor' to see what this credential can reach."
+	case 404:
+		return "Nothing at that path for organization '" + orDefault(e.OrgID, "<org>") + "'. Check the id and --org; 'lumo api' paths are relative to /orgs/<org>/api/v1/admin unless they start with /orgs or /api."
+	case 400:
+		if keys := e.RejectedKeys(); len(keys) > 0 {
+			return "Rejected settings key(s): " + strings.Join(keys, ", ") + ". Only the documented, non-security keys are writable through the API; nothing was saved."
+		}
+	case 429:
+		return "Rate limited. Wait a moment and retry; scripts should back off exponentially."
+	}
+	if e.StatusCode >= 500 {
+		return "The server had a problem. Retry shortly; if it persists, check the server logs or status page."
+	}
+	return ""
+}
+
+func orDefault(v, d string) string {
+	if v == "" {
+		return d
+	}
+	return v
+}
+
+func apiKeysURL(baseURL, orgID string) string {
+	if baseURL == "" {
+		baseURL = "<base-url>"
+	}
+	return strings.TrimRight(baseURL, "/") + "/orgs/" + orDefault(orgID, "<org>") + "/portal/settings/api-keys"
 }
 
 // PaginatedResponse wraps a paginated API response.
@@ -57,181 +211,289 @@ type PaginationMeta struct {
 	HasPreviousPage bool `json:"hasPreviousPage"`
 }
 
-// New creates a new API client from config.
+// New creates an API client from config.
 //
 // Auth precedence:
-//  1. If `lumo login` credentials exist, are unexpired, and target the same
-//     org as this request, use the bearer token. This is the per-user,
-//     auditable, revocable session — the right default whenever we have it.
+//  1. If `lumo login` credentials exist, are unexpired (refreshed silently
+//     when possible), and target the same org as this request, use the bearer
+//     token. This is the per-user, auditable, revocable session — the right
+//     default whenever we have it.
 //  2. Otherwise fall back to a configured API key (lmk_…) for scripted use.
 //  3. Otherwise the request is unauthenticated and will fail at validate().
-//
-// The earlier "API key wins unconditionally" precedence caused a confusing
-// failure mode: a user who'd previously set up a key for org A and then ran
-// `lumo login` against org B would silently keep sending the org-A key to
-// org-B routes, and the server would reject with "Invalid API key" — even
-// though their device-flow credentials were perfectly valid for the route.
 func New(cfg *config.Config) *Client {
-	transport := &http.Transport{}
-	if cfg.Insecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-
-	c := &Client{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		},
-	}
+	c := &Client{cfg: cfg, httpClient: NewHTTPClient(cfg.Insecure, 30*time.Second), method: AuthNone}
 
 	creds, _ := config.LoadCredentials()
 	if creds.HasToken() && creds.IsExpired() {
 		// Best-effort silent refresh. If it fails we fall through to the
-		// API-key path; Validate() will have surfaced a clear error already
-		// when the user has neither.
+		// API-key path; Validate() surfaces a clear error when there is neither.
 		_ = creds.EnsureFresh(cfg.Insecure)
 	}
-	if creds == nil {
-		return c
-	}
-
-	// Inherit org/base from the active profile when not pinned, so commands
-	// work without requiring --org-id when the user just ran `lumo login`
-	// (or created a token-less profile pinning the org for API-key use).
-	if c.cfg.OrgID == "" {
-		c.cfg.OrgID = creds.OrgID
-	}
-	if c.cfg.BaseURL == "" || c.cfg.BaseURL == "https://app.lumoauth.dev" {
-		if creds.BaseURL != "" {
-			c.cfg.BaseURL = creds.BaseURL
+	if creds != nil {
+		// Inherit org/base from the active profile when not pinned, so commands
+		// work without --org right after `lumo login`.
+		if c.cfg.OrgID == "" {
+			c.cfg.OrgID = creds.OrgID
+		}
+		if c.cfg.BaseURL == "" || c.cfg.BaseURL == config.DefaultBaseURL {
+			if creds.BaseURL != "" {
+				c.cfg.BaseURL = creds.BaseURL
+			}
+		}
+		if creds.HasToken() && !creds.IsExpired() && creds.OrgID == c.cfg.OrgID {
+			c.creds = creds
+			c.method = AuthToken
 		}
 	}
-
-	// Only attach the bearer when the profile holds a live token AND the
-	// credentials actually belong to the org being addressed; otherwise the
-	// API key path stays in effect (and the request will succeed if the key
-	// is for the right tenant, or fail with a clear server-side
-	// tenant-mismatch otherwise).
-	if creds.HasToken() && !creds.IsExpired() && creds.OrgID == c.cfg.OrgID {
-		c.creds = creds
+	if c.method == AuthNone && c.cfg.APIKey != "" {
+		c.method = AuthAPIKey
 	}
-
 	return c
 }
 
-// adminURL builds the full URL for an admin API endpoint.
-func (c *Client) adminURL(path string) string {
-	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	orgID := c.cfg.OrgID
-	// Ensure path starts with /
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+// NewHTTPClient builds the http.Client every command shares (TLS policy,
+// timeout). Streaming commands pass a zero timeout.
+func NewHTTPClient(insecure bool, timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if insecure {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- explicit opt-in for local dev
 	}
-	return fmt.Sprintf("%s/orgs/%s/api/v1/admin%s", base, orgID, path)
+	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
-// orgURL builds the full URL for an org-scoped API endpoint (non-admin).
-func (c *Client) orgURL(path string) string {
-	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	orgID := c.cfg.OrgID
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+// Config returns the effective configuration (org/base URL after profile
+// inheritance).
+func (c *Client) Config() *config.Config { return c.cfg }
+
+// AuthMethod reports which credential class requests will carry.
+func (c *Client) AuthMethod() AuthMethod { return c.method }
+
+// Credentials returns the device-flow credentials in use, or nil.
+func (c *Client) Credentials() *config.Credentials { return c.creds }
+
+// HTTPClient exposes the underlying http.Client for streaming callers.
+func (c *Client) HTTPClient() *http.Client { return c.httpClient }
+
+// AuthorizationHeader returns the header name and value to authenticate a
+// hand-built request with the same precedence every other command uses.
+func (c *Client) AuthorizationHeader() (name, value string, err error) {
+	switch c.method {
+	case AuthToken:
+		return "Authorization", "Bearer " + c.creds.AccessToken, nil
+	case AuthAPIKey:
+		return "X-API-Key", c.cfg.APIKey, nil
 	}
-	return fmt.Sprintf("%s/orgs/%s/api/v1%s", base, orgID, path)
+	return "", "", fmt.Errorf("not authenticated; run 'lumo login' or set LUMO_API_KEY")
 }
 
-// rawURL builds a URL from the base URL and arbitrary path.
-func (c *Client) rawURL(path string) string {
-	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
-	}
-	return base + path
+// AdminURL builds the full URL for an Admin API endpoint.
+func (c *Client) AdminURL(path string) string {
+	return c.OrgURL("/admin" + ensureLeadingSlash(path))
 }
 
-// Get performs a GET request to an admin API endpoint.
+// OrgURL builds the full URL for an org-scoped API endpoint (non-admin).
+func (c *Client) OrgURL(path string) string {
+	return fmt.Sprintf("%s/orgs/%s/api/v1%s", strings.TrimRight(c.cfg.BaseURL, "/"), c.cfg.OrgID, ensureLeadingSlash(path))
+}
+
+// RawURL builds a URL from the base URL and an arbitrary path.
+func (c *Client) RawURL(path string) string {
+	return strings.TrimRight(c.cfg.BaseURL, "/") + ensureLeadingSlash(path)
+}
+
+// ResolveURL turns the paths people type into a full URL:
+//
+//	/users                  → {base}/orgs/{org}/api/v1/admin/users   (Admin API, the common case)
+//	admin/users             → same
+//	/orgs/x/api/v1/...      → {base}/orgs/x/api/v1/...               (absolute API path)
+//	/api/v1/authz/check     → {base}/api/v1/authz/check              (global API)
+//	/.well-known/...        → {base}/.well-known/...
+//	https://host/anything   → as given
+func (c *Client) ResolveURL(path string) string {
+	p := strings.TrimSpace(path)
+	switch {
+	case strings.HasPrefix(p, "http://"), strings.HasPrefix(p, "https://"):
+		return p
+	case strings.HasPrefix(p, "/orgs/"), strings.HasPrefix(p, "/api/"), strings.HasPrefix(p, "/.well-known/"),
+		strings.HasPrefix(p, "/healthz"):
+		return c.RawURL(p)
+	case strings.HasPrefix(ensureLeadingSlash(p), "/admin/"):
+		return c.OrgURL(ensureLeadingSlash(p))
+	}
+	return c.AdminURL(p)
+}
+
+func ensureLeadingSlash(p string) string {
+	if !strings.HasPrefix(p, "/") {
+		return "/" + p
+	}
+	return p
+}
+
+// Get performs a GET request to an Admin API endpoint.
 func (c *Client) Get(path string, query url.Values) (json.RawMessage, error) {
-	fullURL := c.adminURL(path)
-	if len(query) > 0 {
-		fullURL += "?" + query.Encode()
-	}
-	return c.doRequest("GET", fullURL, nil)
+	return c.do("GET", withQuery(c.AdminURL(path), query), nil)
 }
 
-// Post performs a POST request to an admin API endpoint.
+// Post performs a POST request to an Admin API endpoint.
 func (c *Client) Post(path string, body interface{}) (json.RawMessage, error) {
-	return c.doRequest("POST", c.adminURL(path), body)
+	return c.do("POST", c.AdminURL(path), body)
 }
 
-// Put performs a PUT request to an admin API endpoint.
+// Put performs a PUT request to an Admin API endpoint.
 func (c *Client) Put(path string, body interface{}) (json.RawMessage, error) {
-	return c.doRequest("PUT", c.adminURL(path), body)
+	return c.do("PUT", c.AdminURL(path), body)
 }
 
-// Patch performs a PATCH request to an admin API endpoint.
+// Patch performs a PATCH request to an Admin API endpoint.
 func (c *Client) Patch(path string, body interface{}) (json.RawMessage, error) {
-	return c.doRequest("PATCH", c.adminURL(path), body)
+	return c.do("PATCH", c.AdminURL(path), body)
 }
 
-// Delete performs a DELETE request to an admin API endpoint.
+// Delete performs a DELETE request to an Admin API endpoint.
 func (c *Client) Delete(path string) (json.RawMessage, error) {
-	return c.doRequest("DELETE", c.adminURL(path), nil)
+	return c.do("DELETE", c.AdminURL(path), nil)
+}
+
+// Request performs a request to a path resolved with ResolveURL.
+func (c *Client) Request(method, path string, query url.Values, body interface{}) (json.RawMessage, error) {
+	return c.do(strings.ToUpper(method), withQuery(c.ResolveURL(path), query), body)
 }
 
 // RawRequest performs a request to an arbitrary path relative to the base URL.
 func (c *Client) RawRequest(method, path string, body interface{}) (json.RawMessage, error) {
-	return c.doRequest(method, c.rawURL(path), body)
+	return c.do(strings.ToUpper(method), c.RawURL(path), body)
 }
 
-func (c *Client) doRequest(method, fullURL string, body interface{}) (json.RawMessage, error) {
-	var reqBody io.Reader
+// NewRequest builds an authenticated *http.Request for callers that need
+// the raw response (streams, large downloads). Headers match do().
+func (c *Client) NewRequest(method, fullURL string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(method, fullURL, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.applyHeaders(req, body != nil)
+	return req, nil
+}
+
+func (c *Client) applyHeaders(req *http.Request, hasBody bool) {
+	if name, value, err := c.AuthorizationHeader(); err == nil {
+		req.Header.Set(name, value)
+	}
+	req.Header.Set("Accept", "application/json")
+	if hasBody {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	// The Admin API's CSRF witness for cookie callers; harmless for
+	// credential callers and keeps every path identical.
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	req.Header.Set("User-Agent", userAgent)
+}
+
+// userAgent is stamped by the command layer with the build version.
+var userAgent = "lumo-cli"
+
+// SetUserAgent lets the command layer stamp the build version on requests.
+func SetUserAgent(ua string) {
+	if ua != "" {
+		userAgent = ua
+	}
+}
+
+func withQuery(fullURL string, query url.Values) string {
+	if len(query) == 0 {
+		return fullURL
+	}
+	sep := "?"
+	if strings.Contains(fullURL, "?") {
+		sep = "&"
+	}
+	return fullURL + sep + query.Encode()
+}
+
+func (c *Client) do(method, fullURL string, body interface{}) (json.RawMessage, error) {
+	var payload []byte
 	if body != nil {
 		data, err := json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
-		reqBody = bytes.NewReader(data)
+		payload = data
 	}
 
-	req, err := http.NewRequest(method, fullURL, reqBody)
+	resp, respBody, err := c.send(method, fullURL, payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
 
-	// Set headers — prefer device-flow Bearer (when it matches this org),
-	// otherwise fall back to the API key. See `New` for the rationale.
-	if c.creds != nil {
-		req.Header.Set("Authorization", "Bearer "+c.creds.AccessToken)
-	} else if c.cfg.APIKey != "" {
-		req.Header.Set("X-API-Key", c.cfg.APIKey)
-	}
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	// CSRF defence-in-depth: admin API rejects cookie/Bearer state-changing
-	// requests without a custom header. Sending it unconditionally is safe.
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	// One transparent retry: a token the server no longer accepts (revoked
+	// server-side, or expired by clock skew) gets refreshed and re-sent.
+	if resp.StatusCode == 401 && c.method == AuthToken && c.creds != nil && c.creds.RefreshToken != "" {
+		if refreshErr := c.creds.ForceRefresh(c.cfg.Insecure); refreshErr == nil {
+			resp, respBody, err = c.send(method, fullURL, payload)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	if resp.StatusCode >= 400 {
-		apiErr := &APIError{StatusCode: resp.StatusCode}
-		if err := json.Unmarshal(respBody, apiErr); err != nil {
-			apiErr.Message = string(respBody)
-		}
-		return nil, apiErr
+		return nil, c.apiError(resp.StatusCode, method, fullURL, respBody)
 	}
-
 	return json.RawMessage(respBody), nil
+}
+
+func (c *Client) send(method, fullURL string, payload []byte) (*http.Response, []byte, error) {
+	var reqBody io.Reader
+	if payload != nil {
+		reqBody = bytes.NewReader(payload)
+	}
+	req, err := c.NewRequest(method, fullURL, reqBody)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	return resp, respBody, nil
+}
+
+func (c *Client) apiError(status int, method, fullURL string, body []byte) *APIError {
+	apiErr := &APIError{StatusCode: status, Method: method, Auth: c.method, BaseURL: c.cfg.BaseURL, OrgID: c.cfg.OrgID}
+	if u, err := url.Parse(fullURL); err == nil {
+		apiErr.Path = u.Path
+	}
+	// The generic envelope is {error, message, status, details}; the OAuth
+	// envelope is {error, error_description}. `error` may also be a boolean
+	// in a few legacy responses — tolerate all of them.
+	var probe struct {
+		Error            json.RawMessage        `json:"error"`
+		Message          string                 `json:"message"`
+		ErrorDescription string                 `json:"error_description"`
+		Details          map[string]interface{} `json:"details"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		apiErr.Message = strings.TrimSpace(string(body))
+		if len(apiErr.Message) > 300 {
+			apiErr.Message = apiErr.Message[:300] + "…"
+		}
+		return apiErr
+	}
+	var code string
+	if len(probe.Error) > 0 {
+		if err := json.Unmarshal(probe.Error, &code); err != nil {
+			code = strings.Trim(string(probe.Error), `"`)
+		}
+	}
+	apiErr.Code = code
+	apiErr.Message = probe.Message
+	apiErr.ErrorDescription = probe.ErrorDescription
+	apiErr.Details = probe.Details
+	return apiErr
 }

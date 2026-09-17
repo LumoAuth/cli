@@ -42,11 +42,11 @@ var agentsListCmd = &cobra.Command{
 
 		var result struct {
 			Data []struct {
-				ID           string `json:"id"`
-				AgentID      string `json:"agentId"`
-				Name         string `json:"name"`
-				Status       string `json:"status"`
-				Type         string `json:"type"`
+				ID           string   `json:"id"`
+				AgentID      string   `json:"agentId"`
+				Name         string   `json:"name"`
+				Status       string   `json:"status"`
+				Type         string   `json:"type"`
 				Capabilities []string `json:"capabilities"`
 			} `json:"data"`
 			Meta struct {

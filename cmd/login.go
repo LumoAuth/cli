@@ -19,6 +19,7 @@ var (
 	loginBaseURL  string
 	loginInsecure bool
 	loginNoBrowse bool
+	loginScopes   []string
 )
 
 func init() {
@@ -30,6 +31,9 @@ func init() {
 	loginCmd.Flags().StringVar(&loginBaseURL, "base-url", "", "Override the LumoAuth base URL")
 	loginCmd.Flags().BoolVar(&loginInsecure, "insecure", false, "Skip TLS verification (dev only)")
 	loginCmd.Flags().BoolVar(&loginNoBrowse, "no-browser", false, "Do not auto-open the verification URL")
+	loginCmd.Flags().StringSliceVar(&loginScopes, "scope", nil,
+		"Scopes to request (comma-separated or repeated). Default: "+strings.Join(auth.DefaultScopes, ",")+
+			". Narrow for least privilege, e.g. --scope openid,admin:users:read")
 }
 
 var loginCmd = &cobra.Command{
@@ -48,8 +52,17 @@ Log in to a second org under a separate name with --profile:
 and switch between them with 'lumo profile use <name>' (or per-command
 via --profile / LUMO_PROFILE).
 
+Scopes: the token carries exactly what you ask for. By default that is
+openid profile email + the blanket 'admin' scope, which is what every
+'lumo' resource command needs. For a least-privilege session request
+resource scopes instead, for example:
+
+  lumo login --org acme-corp --scope openid,admin:users:read,admin:audit:read
+
 The well-known first-party client 'lumoauth-cli' is auto-provisioned
-on the server the first time you log in to a tenant.`,
+on the server the first time you log in to an organization. If your
+administrator narrowed that client's allowed scopes, requesting more
+fails with invalid_scope.`,
 	RunE: runLogin,
 }
 
@@ -68,30 +81,92 @@ var logoutCmd = &cobra.Command{
 
 var whoamiCmd = &cobra.Command{
 	Use:   "whoami",
-	Short: "Print the currently authenticated principal",
+	Short: "Show which credential the CLI will use, and what it can reach",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := getConfig()
+		if err != nil {
+			return err
+		}
+		p := getPrinter()
+		profile := config.ActiveProfileName()
 		creds, err := config.LoadCredentials()
 		if err != nil {
 			return err
 		}
-		profile := config.ActiveProfileName()
-		if !creds.HasToken() {
-			fmt.Fprintf(os.Stderr, "Not logged in (profile %q). Run 'lumo login' to sign in.\n", profile)
-			os.Exit(2)
+
+		info := map[string]interface{}{
+			"profile":  profile,
+			"org":      cfg.OrgID,
+			"base_url": cfg.BaseURL,
 		}
-		if creds.IsExpired() {
-			fmt.Fprintf(os.Stderr, "Credentials expired (profile %q). Run 'lumo login' to renew.\n", profile)
-			os.Exit(2)
+		if creds != nil {
+			if info["org"] == "" {
+				info["org"] = creds.OrgID
+			}
+			if creds.BaseURL != "" && (cfg.BaseURL == "" || cfg.BaseURL == config.DefaultBaseURL) {
+				info["base_url"] = creds.BaseURL
+			}
 		}
-		fmt.Printf("Profile:    %s\n", profile)
-		fmt.Printf("Org:        %s\n", creds.OrgID)
-		fmt.Printf("Base URL:   %s\n", creds.BaseURL)
-		if creds.UserEmail != "" {
-			fmt.Printf("User:       %s\n", creds.UserEmail)
+
+		switch {
+		case creds.HasToken() && !creds.IsExpired():
+			info["auth"] = "token"
+			info["expires_at"] = creds.ExpiresAt.Format(time.RFC3339)
+			if creds.UserEmail != "" {
+				info["user"] = creds.UserEmail
+			}
+			info["scopes"] = creds.Scopes
+			info["admin_api"] = creds.HasAdminAccess()
+		case cfg.APIKey != "":
+			info["auth"] = "api-key"
+			info["api_key"] = maskSecret(cfg.APIKey)
+			info["admin_api"] = true
+		case creds.HasToken():
+			info["auth"] = "expired"
+			info["expires_at"] = creds.ExpiresAt.Format(time.RFC3339)
+		default:
+			info["auth"] = "none"
 		}
-		fmt.Printf("Expires at: %s\n", creds.ExpiresAt.Format(time.RFC3339))
+
+		if p.IsJSON() {
+			p.PrintResult(info)
+		} else {
+			fmt.Printf("Profile:    %s\n", profile)
+			fmt.Printf("Org:        %s\n", info["org"])
+			fmt.Printf("Base URL:   %s\n", info["base_url"])
+			switch info["auth"] {
+			case "token":
+				fmt.Printf("Auth:       login token (expires %s)\n", info["expires_at"])
+				if creds.UserEmail != "" {
+					fmt.Printf("User:       %s\n", creds.UserEmail)
+				}
+				if len(creds.Scopes) > 0 {
+					fmt.Printf("Scopes:     %s\n", strings.Join(creds.Scopes, " "))
+				}
+				if !creds.HasAdminAccess() {
+					fmt.Println("Admin API:  no — the token has no admin scope; run 'lumo login' again or use an API key")
+				}
+			case "api-key":
+				fmt.Printf("Auth:       API key %s (scopes are enforced per resource by the server)\n", info["api_key"])
+			case "expired":
+				fmt.Printf("Auth:       login expired at %s — run 'lumo login'\n", info["expires_at"])
+			default:
+				fmt.Println("Auth:       none — run 'lumo login' or set LUMO_API_KEY")
+			}
+		}
+		if info["auth"] == "expired" || info["auth"] == "none" {
+			os.Exit(ExitAuth)
+		}
 		return nil
 	},
+}
+
+// maskSecret keeps a recognisable prefix/suffix of a credential for display.
+func maskSecret(v string) string {
+	if len(v) <= 12 {
+		return "••••"
+	}
+	return v[:8] + "…" + v[len(v)-4:]
 }
 
 func runLogin(cmd *cobra.Command, args []string) error {
@@ -116,8 +191,17 @@ func runLogin(cmd *cobra.Command, args []string) error {
 
 	fmt.Fprintf(os.Stderr, "→ Starting login on %s for org %s\n", baseURL, orgID)
 
-	dev, err := client.Start()
+	scopes := auth.DefaultScopes
+	if len(loginScopes) > 0 {
+		scopes = auth.SplitScopes(strings.Join(loginScopes, ","))
+	}
+	fmt.Fprintf(os.Stderr, "  Requesting scopes: %s\n", strings.Join(scopes, " "))
+
+	dev, err := client.Start(scopes)
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid_scope") {
+			return fmt.Errorf("start device flow: %w\n  The organization's 'lumoauth-cli' client does not allow one of the requested scopes.\n  Ask an administrator to allow it (Applications → LumoAuth CLI → Scopes), or narrow the request, e.g.\n    lumo login --org %s --scope openid,profile,email", err, orgID)
+		}
 		return fmt.Errorf("start device flow: %w", err)
 	}
 
@@ -185,20 +269,23 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		if err := config.ValidateProfileName(profile); err != nil {
 			return err
 		}
-		expiresAt := time.Now().Add(time.Duration(result.Token.ExpiresIn) * time.Second)
-		creds := &config.Credentials{
-			BaseURL:      baseURL,
-			OrgID:        orgID,
-			AccessToken:  result.Token.AccessToken,
-			RefreshToken: result.Token.RefreshToken,
-			ExpiresAt:    expiresAt,
-			TokenType:    result.Token.TokenType,
+		creds := &config.Credentials{BaseURL: baseURL, OrgID: orgID}
+		creds.ApplyToken(result.Token)
+		if len(creds.Scopes) == 0 {
+			// Servers that omit `scope` on success granted what was requested.
+			creds.Scopes = scopes
 		}
 		if err := config.SaveProfile(profile, creds, true); err != nil {
 			return fmt.Errorf("save credentials: %w", err)
 		}
 
 		fmt.Fprintf(os.Stderr, "✓ Logged in to %s. Credentials saved to profile %q in %s\n", orgID, profile, config.CredentialsPath())
+		fmt.Fprintf(os.Stderr, "  Granted scopes: %s\n", strings.Join(creds.Scopes, " "))
+		if !creds.HasAdminAccess() {
+			fmt.Fprintln(os.Stderr, "  ! No admin scope was granted, so 'lumo' resource commands will be refused (403).")
+			fmt.Fprintln(os.Stderr, "    Ask an administrator to allow the 'admin' scope on the 'lumoauth-cli' client, or use an API key.")
+		}
+		fmt.Fprintln(os.Stderr, "  Next: lumo doctor")
 		return nil
 	}
 }

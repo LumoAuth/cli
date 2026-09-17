@@ -10,10 +10,11 @@ Designed for **org admins**, **AI coding agents**, and **developers building loc
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
-lumo login --org acme-corp
+lumo login --org acme-corp     # approve in the browser
+lumo doctor                    # ✓ credential, scopes, server, admin api
 ```
 
-Two commands. The installer drops the binary in `~/.local/bin`, and `lumo login` opens your browser to confirm the device-flow approval. No API key paste, no `config init` wizard — credentials land in `~/.lumoauth/credentials.yaml` with mode 0600 and you're ready to go.
+The installer drops the binary in `~/.local/bin`; `lumo login` opens your browser for the device-flow approval and stores a token with the `admin` scope in `~/.lumoauth/credentials.yaml` (mode 0600); `lumo doctor` proves it works before you run anything else.
 
 For scripted/CI use see the [API key authentication](#authentication) section below.
 
@@ -25,7 +26,9 @@ The CLI now covers the full first-15-minutes loop without leaving the terminal:
 
 | Command | Purpose |
 |---|---|
-| `lumo login` / `logout` / `whoami` | Browser-based OAuth 2.0 device-flow sign-in (RFC 8628). |
+| `lumo login [--scope …]` / `logout` / `whoami` | Browser-based OAuth 2.0 device-flow sign-in (RFC 8628) with explicit, narrowable scopes. |
+| `lumo doctor` | One command that checks profile, credential, scopes, server reachability and Admin API access, with a fix for every failure. |
+| `lumo org get` / `org update --set k=v` | The organization profile and its writable settings (`allow_root_admin_login`, `security.dpop_require_nonce`, …). |
 | `lumo dev start` / `dev list` / `dev stop` | Spawn ephemeral sandbox tenants — Neon-branch style — for branch previews and PR environments. |
 | `lumo tunnel --to <url>` | Forward live webhook events to localhost (like `stripe listen`). |
 | `lumo init --framework <name>` | Scaffold a working starter project (next, express, fastapi, go) wired to your org. |
@@ -119,29 +122,38 @@ lumo login --org acme-corp
 
 Behind the scenes:
 
-1. CLI calls `POST /orgs/{org}/api/v1/oauth/device_authorization` with the well-known first-party client `lumoauth-cli`.
+1. CLI calls `POST /orgs/{org}/api/v1/oauth/device_authorization` with the well-known first-party client `lumoauth-cli` and an explicit `scope` (default `openid profile email admin`).
 2. CLI prints a `user_code` and opens your browser to the verification URL.
 3. You approve in the dashboard.
-4. CLI polls the token endpoint and stores tokens at `~/.lumoauth/credentials.yaml` (0600).
+4. CLI polls the token endpoint and stores the tokens and granted scopes at `~/.lumoauth/credentials.yaml` (0600).
 
-Subsequent commands use the stored bearer token automatically — no flags required.
+Subsequent commands use the stored bearer token automatically. Access tokens last an hour and are refreshed silently from the 30-day refresh token — also once more, transparently, when the server answers `401`.
 
 ```bash
-lumo whoami    # Shows current org, user, expiry
-lumo logout    # Wipes credentials.yaml
+lumo whoami    # profile, org, credential in use, scopes, expiry (-o json for scripts)
+lumo doctor    # verifies the credential against the server
+lumo logout    # clears the active profile's tokens
 ```
 
-The first time you log in to a tenant, the server lazy-creates a `lumoauth-cli` public OAuth client for it (device_code + refresh_token grants, no PKCE — the device flow already binds approval to the verified user code).
+**Scopes.** `admin` is the blanket Admin API scope and is what every `lumo` resource command needs: the Admin API accepts an OAuth token only when it carries `admin` or `admin:<resource>:<read|write>` *and* the signed-in user holds `settings.manage`. For a least-privilege session request resource scopes instead:
+
+```bash
+lumo login --org acme-corp --scope openid,admin:users:read,admin:audit:read
+```
+
+A command that needs more answers `403` naming the missing scope and the exact `lumo login --scope …` that fixes it.
+
+The first time you log in to an organization, the server lazy-creates a `lumoauth-cli:<slug>` public OAuth client (device_code + refresh_token grants, no PKCE — the device flow already binds approval to the verified user code) allowing the default scopes. Administrators can narrow that list to force least-privilege sessions; requesting a scope it does not allow fails with `invalid_scope` and a hint.
 
 ### B. API key (recommended for CI / scripting)
 
 ```bash
 export LUMO_API_KEY=lmk_your_key_here
-export LUMO_ORG_ID=acme-corp
+export LUMO_ORG=acme-corp
 lumo users list
 ```
 
-API keys live at `https://<your-lumoauth>/orgs/<orgId>/portal/settings/api-keys`. Use scoped keys — create one per CI job, revoke when no longer needed.
+API keys live at `https://<your-lumoauth>/orgs/<orgId>/portal/settings/api-keys`. They are checked **per resource**: a key with `admin:users:read` can list users and nothing else, `:read` never authorises a write, and the key stops working if its creator is deactivated or loses `settings.manage`. Create one key per job with only the scopes in the [API scopes](#api-scopes) table for the commands it runs.
 
 ### Named profiles (multi-org)
 
@@ -158,14 +170,14 @@ lumo users list --profile clientb # one-off command against another profile
 LUMO_PROFILE=clientb lumo users list   # env-var selection (CI, direnv)
 
 lumo profile show [name]          # inspect a profile (tokens masked)
-lumo profile create staging --org-id acme-staging   # token-less profile for API-key use
+lumo profile create staging --org acme-staging      # token-less profile for API-key use
 lumo profile delete clientb       # remove a profile and its tokens
 ```
 
 Each profile stores its own `org_id`, `base_url`, and login tokens in
 `~/.lumoauth/credentials.yaml`. Profile selection precedence: `--profile`
 flag > `LUMO_PROFILE` env var > `current_profile` in the credentials file.
-The `--org-id` flag still overrides the profile's org for a single command.
+The `--org` flag still overrides the profile's org for a single command.
 
 Existing single-profile credential files are migrated automatically on
 first use: your old credentials become the `default` profile and the
@@ -176,14 +188,16 @@ sessions.
 
 ### Configuration precedence
 
+Settings (organization, base URL, output format) resolve flags > environment > config file > active profile:
+
 | Priority | Method | Example |
 |----------|--------|---------|
-| 1 (highest) | CLI flags | `--api-key lmk_xxx --org-id acme-corp` |
-| 2 | Environment variables | `LUMO_API_KEY`, `LUMO_ORG_ID`, `LUMO_BASE_URL` |
+| 1 (highest) | CLI flags | `--org acme-corp --base-url https://eu.app.lumoauth.dev` |
+| 2 | Environment variables | `LUMO_ORG`, `LUMO_BASE_URL`, `LUMO_API_KEY` |
 | 3 | Config file | `~/.lumoauth/config.yaml` |
-| 4 (fallback) | Stored credentials | `~/.lumoauth/credentials.yaml` (from `lumo login`) |
+| 4 (fallback) | Active profile | `~/.lumoauth/credentials.yaml` (from `lumo login`) |
 
-When no API key is set anywhere, the CLI uses the credentials file. Stored credentials inherit `org_id` and `base_url` so you don't have to repeat them.
+The **credential** is chosen separately: the active profile's login token wins whenever it targets the organization the command addresses (so a stale key for another org is never sent by accident); otherwise the API key is used; otherwise the command exits with code 2 and a hint. `lumo whoami` shows the outcome.
 
 ### Config file format
 
@@ -207,6 +221,7 @@ profiles:
     refresh_token: ...
     expires_at: 2026-05-08T17:00:00Z
     token_type: Bearer
+    scopes: [openid, profile, email, admin]
   clientb:
     base_url: https://eu.app.lumoauth.dev
     org_id: clientb-corp
@@ -228,12 +243,12 @@ lumo config set org_id acme-corp
 ### Global flags
 
 ```
---api-key string    API key (overrides LUMO_API_KEY)
---org-id string     Organization ID (overrides LUMO_ORG_ID)
+--api-key string    Organization API key lmk_… (overrides LUMO_API_KEY)
+--org string        Organization slug (overrides LUMO_ORG and the active profile; --org-id still accepted)
 --base-url string   Base URL (overrides LUMO_BASE_URL)
 --profile string    Named credentials profile (overrides LUMO_PROFILE and current_profile)
--o, --output string Output format: table, json, yaml (default: table)
---insecure          Skip TLS verification (useful for local dev)
+-o, --output string Output format: table, json, yaml (default: table; json when piped)
+--insecure          Skip TLS verification (local dev only)
 -q, --quiet         Suppress non-essential output
 -v, --verbose       Enable verbose output
 ```
@@ -241,12 +256,32 @@ lumo config set org_id acme-corp
 ### `login` / `logout` / `whoami`
 
 ```bash
-lumo login [--org acme-corp] [--profile name] [--no-browser] [--insecure]
+lumo login [--org acme-corp] [--scope openid,admin:users:read] [--profile name] [--no-browser] [--insecure]
 lumo logout
-lumo whoami
+lumo whoami [-o json]
 ```
 
-`--no-browser` prints the verification URL instead of trying to open a browser — useful in headless or remote environments. `--profile` logs in to (or creates) a named profile; `logout` clears only the active profile.
+`--scope` narrows the requested scopes (default `openid,profile,email,admin`). `--no-browser` prints the verification URL instead of opening a browser — useful in headless or remote environments. `--profile` logs in to (or creates) a named profile; `logout` clears only the active profile. `whoami` shows which credential the next command will send and, for a login token, its scopes.
+
+### `doctor`
+
+```bash
+lumo doctor            # ✓/✗ per check, with the fix for each failure
+lumo doctor -o json    # {"ok": bool, "checks": [...]} — exit 1 when a check fails
+```
+
+Checks the active profile, organization, server reachability (OIDC discovery), the credential and its scopes, and a real Admin API call. Run it after `lumo login`, after creating an API key, and in CI before the real work.
+
+### `org` — organization profile and settings
+
+```bash
+lumo org get
+lumo org update --name "ACME Corporation"
+lumo org update --set timezone=Europe/Berlin --set allow_root_admin_login=false
+lumo org update --set security.dpop_require_nonce=true
+```
+
+Only the documented, non-security settings keys are writable; anything else is refused with the offending keys listed and nothing is saved. Dotted keys nest, and object-valued keys merge key by key.
 
 ### `profile` — Named credential profiles
 
@@ -254,7 +289,7 @@ lumo whoami
 lumo profile list                # all profiles; * marks the active one
 lumo profile use <name>          # set the current profile
 lumo profile show [name]         # profile details (tokens masked)
-lumo profile create <name> [--org-id slug] [--base-url url] [--use]
+lumo profile create <name> [--org slug] [--base-url url] [--use]
 lumo profile delete <name> [-f]
 ```
 
@@ -278,7 +313,7 @@ lumo dev list
 lumo dev stop sandbox-pr-1234-7a3b21
 ```
 
-`lumo dev start` prints the sandbox slug. Use it like any other org by passing `--org-id` or by exporting `LUMO_ORG_ID`. The sandbox can be destroyed early with `lumo dev stop`; only the sandbox's owner (the user who created it) can destroy it.
+`lumo dev start` prints the sandbox slug. Use it like any other org by passing `--org` or by exporting `LUMO_ORG`. The sandbox can be destroyed early with `lumo dev stop`; only the sandbox's owner (the user who created it) can destroy it.
 
 ### `tunnel` — Forward webhooks to localhost
 
@@ -449,12 +484,15 @@ lumo social delete <id>
 
 ### Raw API access
 
-For endpoints not covered by named commands, or for use by AI agents:
+For endpoints not covered by named commands, or for use by AI agents. Paths are relative to the Admin API of the current organization; absolute API paths and URLs work too:
 
 ```bash
-lumo api GET /orgs/<orgId>/api/v1/admin/users
-lumo api POST /orgs/<orgId>/api/v1/admin/roles --data '{"name": "Editor"}'
-lumo api DELETE /orgs/<orgId>/api/v1/admin/users/abc-123
+lumo api GET /users --query search=jane --query limit=5     # → /orgs/<org>/api/v1/admin/users?search=jane&limit=5
+lumo api POST /roles --data '{"name": "Editor"}'
+lumo api PATCH /organization --data '{"settings":{"allow_root_admin_login":false}}'
+lumo api GET /orgs/<org>/api/v1/.well-known/openid-configuration   # absolute API path
+lumo api GET /api/v1/authz/check                                   # global API
+lumo api --raw GET /healthz                                        # relative to the base URL
 ```
 
 The full set of routes is documented at `/api/doc` on your LumoAuth instance (auto-generated OpenAPI 3 spec).
@@ -481,8 +519,8 @@ This CLI is designed to be easily used by AI coding agents (Copilot, Cursor, Cla
 | Feature | Details |
 |---------|---------|
 | Auto-JSON output | Non-TTY environments automatically get JSON |
-| Structured errors | `{"error": true, "message": "..."}` |
-| Typed exit codes | `0` = success, `1` = error, `2` = auth error, `3` = not found |
+| Structured errors | `{"error": true, "message", "hint", "status", "code", "details"}` — `hint` says how to fix it (e.g. the exact `lumo login --scope …`) |
+| Typed exit codes | `0` success · `1` error · `2` auth/authorization · `3` not found · `4` invalid input · `5` rate limited |
 | `--quiet` mode | Suppresses decorative output |
 | Raw API | `lumo api` allows any endpoint without a dedicated command |
 | No interactivity | All operations are non-interactive (no prompts during execution) |
@@ -493,15 +531,18 @@ This CLI is designed to be easily used by AI coding agents (Copilot, Cursor, Cla
 You have access to the LumoAuth CLI (`lumo`). Use it to manage users, roles,
 and permissions for the organization. Authenticate ONE of these ways:
 
-  - LUMO_API_KEY + LUMO_ORG_ID env vars (CI / scripted), OR
+  - LUMO_API_KEY + LUMO_ORG env vars (CI / scripted), OR
   - `lumo login --org <slug>` once at the start (interactive).
+
+Run `lumo doctor -o json` first; if "ok" is false, fix the failing check's hint.
 
 To list users:     lumo users list -o json
 To create a role:  lumo roles create --name "Editor" --permissions doc.edit,doc.view -o json
-To check settings: lumo settings get auth -o json
-To make raw calls: lumo api GET /orgs/{orgId}/api/v1/admin/users -o json
+To check settings: lumo settings get authentication -o json
+To make raw calls: lumo api GET /users -o json      (paths are relative to the Admin API)
 
-Always use -o json for parseable output.
+Always use -o json for parseable output. On a 403, read "hint" in the error JSON:
+it names the missing scope and how to get it.
 ```
 
 ### Example: scripting
@@ -510,8 +551,8 @@ Always use -o json for parseable output.
 #!/bin/bash
 # Spawn a sandbox tenant for a PR and seed it
 SLUG=$(lumo dev start --name pr-1234 -o json | jq -r '.data.slug')
-lumo --org-id "$SLUG" users create --email demo@example.com --name "Demo"
-lumo --org-id "$SLUG" agents create --name "PR Bot"
+lumo --org "$SLUG" users create --email demo@example.com --name "Demo"
+lumo --org "$SLUG" agents create --name "PR Bot"
 echo "Sandbox $SLUG ready"
 ```
 
@@ -521,8 +562,8 @@ echo "Sandbox $SLUG ready"
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `LUMO_API_KEY` | Admin API key (`lmk_...`) | — |
-| `LUMO_ORG_ID` | Organization ID | — |
+| `LUMO_API_KEY` | Organization API key (`lmk_...`) | — |
+| `LUMO_ORG` | Organization slug (`LUMO_ORG_ID` still accepted) | active profile's org |
 | `LUMO_BASE_URL` | LumoAuth server URL | `https://app.lumoauth.dev` (US) |
 | `LUMO_PROFILE` | Named credentials profile | `current_profile` from credentials.yaml |
 | `LUMO_OUTPUT_FORMAT` | Default output format | `table` |
@@ -533,7 +574,7 @@ echo "Sandbox $SLUG ready"
 
 ## API scopes
 
-Each API key has granular scopes that control access. Device-flow logins inherit the scopes granted to the `lumoauth-cli` first-party client (configurable per tenant in the dashboard).
+Scopes are enforced per resource and fail closed. An API key carries the scopes ticked when it was created; a login token carries what `lumo login --scope` requested (default: the blanket `admin`, which satisfies every row below within the user's own permissions). Read scopes never authorise writes, and a scope for one resource never unlocks another. `lumo settings get` on any area needs `admin:settings:read`; `lumo org update` needs `admin:settings:write`.
 
 | Command | Required scope |
 |---------|---------------|
@@ -553,12 +594,14 @@ Each API key has granular scopes that control access. Device-flow logins inherit
 | `logs list/get/stats/export/follow` | `admin:audit:read` |
 | `permissions list/get` | `admin:permissions:read` |
 | `permissions create/update/delete` | `admin:permissions:write` |
-| `settings get` | `admin:settings:read` |
-| `settings update` | `admin:settings:write` |
+| `settings get`, `org get` | `admin:settings:read` |
+| `settings update`, `org update` | `admin:settings:write` |
 | `sessions/tokens` | `admin:sessions:read`, `admin:sessions:write` |
 | `social list/get` | `admin:social:read` |
 | `social create/delete` | `admin:social:write` |
-| `dev start/list/stop` | `admin:tenant:write` (sandbox) |
+| `dev start/list/stop` | `admin:settings:read` (list), `admin:settings:write` (start/stop) |
+| `mcp servers/discovery/test` | `admin:agents:read`, `admin:agents:write` (test mints a token) |
+| `doctor` | any scope that can read the organization (`admin`, `admin:settings:read`) |
 
 ---
 
@@ -569,6 +612,12 @@ Each API key has granular scopes that control access. Device-flow logins inherit
 **Browser doesn't open during `lumo login`** — pass `--no-browser` and copy the verification URL by hand. The flow still works.
 
 **`stored credentials have expired`** — the CLI auto-refreshes with the stored refresh token; this error means the refresh token itself expired or was revoked. Run `lumo login` again (add `--profile <name>` if the expired credentials belong to a non-default profile).
+
+**`403 forbidden` right after `lumo login`** — the token has no admin scope: either you narrowed `--scope`, or an administrator narrowed the `lumoauth-cli:<slug>` client. The error's hint names the missing scope; `lumo login` again with it, or use an API key. `lumo doctor` shows the scopes in effect.
+
+**`invalid_scope` on `lumo login`** — the organization's CLI client does not allow a requested scope. Narrow `--scope`, or ask an administrator to allow it under Applications → LumoAuth CLI.
+
+**`404` from `lumo api`** — paths are relative to `/orgs/<org>/api/v1/admin` unless they start with `/orgs`, `/api` or `/.well-known`; pass `--raw` for anything else relative to the base URL.
 
 **Webhooks don't show up in `lumo tunnel`** — check `lumo webhooks list` for any *other* webhooks subscribed to the same events; the dispatcher fires every subscriber. The tunnel still receives them, but make sure you're reproducing the action that triggers the event.
 

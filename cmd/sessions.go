@@ -45,9 +45,9 @@ var sessionsListCmd = &cobra.Command{
 }
 
 var sessionsRevokeCmd = &cobra.Command{
-	Use:  "revoke <session-id>",
+	Use:   "revoke <session-id>",
 	Short: "Revoke a session",
-	Args: cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {
@@ -126,9 +126,9 @@ var tokensListCmd = &cobra.Command{
 }
 
 var tokensRevokeCmd = &cobra.Command{
-	Use:  "revoke <token-id>",
+	Use:   "revoke <token-id>",
 	Short: "Revoke a token",
-	Args: cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {

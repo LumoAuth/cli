@@ -3,138 +3,166 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
+// settingsResources maps the names people type to Admin API paths. Aliases
+// point at the same path; the first name of each group is the canonical one
+// shown in help.
+var settingsResources = map[string]string{
+	"general":        "/settings/general",
+	"authentication": "/settings/authentication",
+	"auth":           "/settings/authentication",
+	"security":       "/settings/security",
+	"email":          "/settings/email",
+	"branding":       "/settings/branding",
+	"scim":           "/settings/scim",
+	"organization":   "/organization",
+	"org":            "/organization",
+	"tenant":         "/organization",
+}
+
+func settingsResourceNames() string {
+	seen := map[string]bool{}
+	var names []string
+	for name, path := range settingsResources {
+		if seen[path] {
+			continue
+		}
+		// Prefer the canonical spelling for each path.
+		canonical := name
+		for n, p := range settingsResources {
+			if p == path && len(n) > len(canonical) && n != "tenant" {
+				canonical = n
+			}
+		}
+		seen[path] = true
+		names = append(names, canonical)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
 var settingsCmd = &cobra.Command{
 	Use:     "settings",
 	Aliases: []string{"setting"},
-	Short:   "View and update tenant settings",
-	Long: `View and update tenant configuration, authentication settings, branding, and AI settings.
+	Short:   "View and update organization settings by area",
+	Long: `View and update one area of organization settings at a time.
 
-Subresources:
-  tenant   - Tenant profile and metadata
-  auth     - Authentication policies (MFA, sessions, password rules)
-  branding - Login page branding (logo, colors, text)
-  ai       - AI and agent settings`,
+Areas:
+  general         Name, display name, time zone, locale
+  authentication  Password policy, MFA, sessions, passkeys (alias: auth)
+  security        OAuth hardening switches (e.g. dpop_require_nonce)
+  email           Sender name/address and provider
+  branding        Login page logo, colours, texts (sanitised server-side)
+  scim            Provisioning policy: allow_user_creation / updates / deletion,
+                  allow_group_operations, protected_attributes, deprovisioning_action
+  organization    The organization profile (same as 'lumo org')
+
+Reads need the admin:settings:read scope, writes admin:settings:write.
+
+Examples:
+  lumo settings get scim
+  lumo settings update scim --set allow_user_deletion=false --set deprovisioning_action=deactivate
+  lumo settings update authentication --set mfa_required=true
+  lumo settings update branding --data '{"primary_color":"#0f766e"}'
+  lumo settings get all         # every area in one document`,
 }
 
 var settingsGetCmd = &cobra.Command{
-	Use:   "get <resource>",
-	Short: "Get settings for a resource (tenant, auth, branding, ai)",
+	Use:   "get <area>",
+	Short: "Get settings for an area (or 'all')",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {
 			return err
 		}
-		p := getPrinter()
-
-		path := resolveSettingsPath(args[0])
-		if path == "" {
-			return fmt.Errorf("unknown settings resource: %s (use: tenant, auth, branding, ai)", args[0])
+		path := "/settings"
+		if args[0] != "all" {
+			var ok bool
+			path, ok = settingsResources[args[0]]
+			if !ok {
+				return fmt.Errorf("unknown settings area %q (use one of: %s, all)", args[0], settingsResourceNames())
+			}
 		}
-
 		resp, err := c.Get(path, nil)
 		if err != nil {
 			return err
 		}
-		p.PrintResult(json.RawMessage(resp))
+		getPrinter().PrintResult(json.RawMessage(resp))
 		return nil
 	},
 }
 
 var settingsUpdateCmd = &cobra.Command{
-	Use:   "update <resource>",
-	Short: "Update settings for a resource (tenant, auth, branding, ai)",
+	Use:   "update <area>",
+	Short: "Update settings for an area",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {
 			return err
 		}
-		p := getPrinter()
-
-		path := resolveSettingsPath(args[0])
-		if path == "" {
-			return fmt.Errorf("unknown settings resource: %s (use: tenant, auth, branding, ai)", args[0])
+		path, ok := settingsResources[args[0]]
+		if !ok {
+			return fmt.Errorf("unknown settings area %q (use one of: %s)", args[0], settingsResourceNames())
 		}
 
-		// Build body from flags
 		body := map[string]interface{}{}
-
-		// Generic key-value flags
-		data, _ := cmd.Flags().GetString("data")
-		if data != "" {
+		if data, _ := cmd.Flags().GetString("data"); data != "" {
 			if err := json.Unmarshal([]byte(data), &body); err != nil {
 				return fmt.Errorf("invalid JSON in --data: %w", err)
 			}
 		}
-
-		// Named flags for common settings
-		if v, _ := cmd.Flags().GetString("name"); v != "" {
-			body["name"] = v
+		if pairs, _ := cmd.Flags().GetStringArray("set"); len(pairs) > 0 {
+			kv, err := parseSetFlags(pairs)
+			if err != nil {
+				return err
+			}
+			if path == "/organization" {
+				// The organization endpoint nests everything but `name` under settings.
+				if n, ok := kv["name"]; ok {
+					body["name"] = n
+					delete(kv, "name")
+				}
+				if len(kv) > 0 {
+					settings, _ := body["settings"].(map[string]interface{})
+					if settings == nil {
+						settings = map[string]interface{}{}
+					}
+					mergeInto(settings, kv)
+					body["settings"] = settings
+				}
+			} else {
+				mergeInto(body, kv)
+			}
 		}
-		if v, _ := cmd.Flags().GetString("display-name"); v != "" {
-			body["displayName"] = v
-		}
-		if v, _ := cmd.Flags().GetString("logo-url"); v != "" {
-			body["logoUrl"] = v
-		}
-		if v, _ := cmd.Flags().GetString("primary-color"); v != "" {
-			body["primaryColor"] = v
-		}
-		if cmd.Flags().Changed("mfa-required") {
-			v, _ := cmd.Flags().GetBool("mfa-required")
-			body["mfaRequired"] = v
-		}
-		if v, _ := cmd.Flags().GetInt("session-lifetime"); v > 0 {
-			body["sessionLifetime"] = v
-		}
-
 		if len(body) == 0 {
-			return fmt.Errorf("no settings to update. Use --data '{...}' or named flags like --name, --mfa-required")
+			return fmt.Errorf("nothing to update: pass --set key=value (repeatable) or --data '{...}'")
 		}
 
 		resp, err := c.Patch(path, body)
 		if err != nil {
 			return err
 		}
-
+		p := getPrinter()
 		if !p.IsTable() {
 			p.PrintResult(json.RawMessage(resp))
 			return nil
 		}
-		p.PrintSuccess(fmt.Sprintf("Settings for '%s' updated", args[0]))
+		p.PrintSuccess(fmt.Sprintf("Settings for %q updated", args[0]))
+		p.PrintResult(json.RawMessage(resp))
 		return nil
 	},
 }
 
-func resolveSettingsPath(resource string) string {
-	switch resource {
-	case "tenant":
-		return "/tenant"
-	case "auth":
-		return "/settings/auth"
-	case "branding":
-		return "/settings/branding"
-	case "ai":
-		return "/settings/ai"
-	default:
-		return ""
-	}
-}
-
 func init() {
-	settingsUpdateCmd.Flags().String("data", "", "JSON object with settings to update")
-	settingsUpdateCmd.Flags().String("name", "", "Tenant/resource name")
-	settingsUpdateCmd.Flags().String("display-name", "", "Display name")
-	settingsUpdateCmd.Flags().String("logo-url", "", "Logo URL (branding)")
-	settingsUpdateCmd.Flags().String("primary-color", "", "Primary color (branding)")
-	settingsUpdateCmd.Flags().Bool("mfa-required", false, "Require MFA (auth)")
-	settingsUpdateCmd.Flags().Int("session-lifetime", 0, "Session lifetime in seconds (auth)")
-
+	settingsUpdateCmd.Flags().StringArray("set", nil, "key=value to change (repeatable; dotted keys nest)")
+	settingsUpdateCmd.Flags().String("data", "", "Raw JSON object with the fields to change")
 	settingsCmd.AddCommand(settingsGetCmd, settingsUpdateCmd)
 	rootCmd.AddCommand(settingsCmd)
 }

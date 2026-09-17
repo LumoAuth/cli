@@ -138,11 +138,11 @@ var configShowCmd = &cobra.Command{
 
 		if p.IsJSON() {
 			p.PrintResult(map[string]interface{}{
-				"org_id":    cfg.OrgID,
-				"api_key":   maskedKey,
-				"base_url":  cfg.BaseURL,
-				"format":    cfg.Format,
-				"insecure":  cfg.Insecure,
+				"org_id":      cfg.OrgID,
+				"api_key":     maskedKey,
+				"base_url":    cfg.BaseURL,
+				"format":      cfg.Format,
+				"insecure":    cfg.Insecure,
 				"config_path": config.ConfigPath(),
 			})
 			return nil

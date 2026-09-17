@@ -49,9 +49,9 @@ var socialListCmd = &cobra.Command{
 }
 
 var socialGetCmd = &cobra.Command{
-	Use:  "get <provider-id>",
+	Use:   "get <provider-id>",
 	Short: "Get provider details",
-	Args: cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {
@@ -107,9 +107,9 @@ var socialCreateCmd = &cobra.Command{
 }
 
 var socialDeleteCmd = &cobra.Command{
-	Use:  "delete <provider-id>",
+	Use:   "delete <provider-id>",
 	Short: "Delete a social provider",
-	Args: cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {

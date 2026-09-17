@@ -241,16 +241,55 @@ func (p *Printer) PrintSuccess(msg string) {
 	fmt.Printf("✓ %s\n", msg)
 }
 
+// Failure is the structured error envelope printed in JSON mode. Scripts can
+// branch on `status`/`code` and surface `hint` to a human.
+type Failure struct {
+	Message string      `json:"message"`
+	Hint    string      `json:"hint,omitempty"`
+	Status  int         `json:"status,omitempty"`
+	Code    string      `json:"code,omitempty"`
+	Details interface{} `json:"details,omitempty"`
+}
+
 // PrintError prints an error message.
 func (p *Printer) PrintError(err error) {
+	p.PrintFailure(Failure{Message: err.Error()})
+}
+
+// PrintFailure prints a structured failure: JSON on stdout in JSON mode
+// (with `"error": true` for backwards compatibility), otherwise
+// "Error: …" and an optional "Hint: …" on stderr.
+func (p *Printer) PrintFailure(f Failure) {
 	if p.format == FormatJSON {
-		p.printJSON(map[string]interface{}{
-			"error":   true,
-			"message": err.Error(),
-		})
+		body := map[string]interface{}{"error": true, "message": f.Message}
+		if f.Hint != "" {
+			body["hint"] = f.Hint
+		}
+		if f.Status != 0 {
+			body["status"] = f.Status
+		}
+		if f.Code != "" {
+			body["code"] = f.Code
+		}
+		if f.Details != nil {
+			body["details"] = f.Details
+		}
+		p.printJSON(body)
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+	fmt.Fprintf(os.Stderr, "Error: %s\n", f.Message)
+	if f.Hint != "" {
+		fmt.Fprintf(os.Stderr, "Hint:  %s\n", f.Hint)
+	}
+}
+
+// PrintNote prints an informational line on stderr (never in quiet mode),
+// keeping stdout clean for data.
+func (p *Printer) PrintNote(msg string) {
+	if p.quiet {
+		return
+	}
+	fmt.Fprintln(os.Stderr, msg)
 }
 
 // PrintPagination prints pagination info.

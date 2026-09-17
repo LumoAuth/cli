@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -21,29 +22,43 @@ var (
 	flagVerbose  bool
 )
 
+// Exit codes, stable for scripts and CI:
+//
+//	0 success · 1 general failure · 2 authentication/authorization
+//	3 not found · 4 invalid input (400/409/422) · 5 rate limited
+const (
+	ExitOK        = 0
+	ExitGeneral   = 1
+	ExitAuth      = 2
+	ExitNotFound  = 3
+	ExitInput     = 4
+	ExitRateLimit = 5
+)
+
 // rootCmd represents the base command.
 var rootCmd = &cobra.Command{
 	Use:   "lumo",
 	Short: "LumoAuth CLI — manage your organization's identity infrastructure",
-	Long: `LumoAuth CLI provides comprehensive management of your LumoAuth organization.
+	Long: `LumoAuth CLI manages one organization at a time: users, roles, groups,
+OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions.
 
-Manage users, roles, groups, OAuth clients, agents, webhooks,
-audit logs, permissions, settings, sessions, and more.
+Get started:
+  lumo login --org acme-corp      browser sign-in (OAuth 2.0 device flow)
+  lumo doctor                     check credentials, scopes and connectivity
+  lumo users list                 any resource command; -o json for scripts
 
-Authentication:
-  Set your API key via --api-key, LUMO_API_KEY env var, or 'lumo config init'.
-  API keys are created at /orgs/<orgId>/portal/settings/api-keys.
+Credentials (both are stateless: no cookie, sent on every call):
+  • lumo login      a per-user token that carries the 'admin' scope by default;
+                    narrow it with --scope for least privilege.
+  • API key         LUMO_API_KEY / --api-key / 'lumo config set api_key' for
+                    CI and scripts. Keys are checked per resource: a key with
+                    admin:users:read can list users and nothing else.
 
-AI Agent Integration:
-  Use -o json for structured output, or pipe to get auto-JSON.
-  Use 'lumo api' for raw API access to any endpoint.
+Raw access:
+  lumo api GET /users             paths are relative to the Admin API
+  lumo api GET /orgs/acme/api/v1/me   absolute API paths work too
 
-Examples:
-  lumo users list --search "john"
-  lumo roles create --name "Editor"
-  lumo audit-logs list --limit 50
-  lumo settings get auth
-  lumo api GET /orgs/<orgId>/api/v1/admin/users`,
+Exit codes: 0 ok · 1 error · 2 auth · 3 not found · 4 invalid input · 5 rate limited`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	// PersistentPreRun runs after flag parsing for every subcommand — the
@@ -52,45 +67,83 @@ Examples:
 	// current_profile in ~/.lumoauth/credentials.yaml.
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		config.SetProfileOverride(flagProfile)
+		client.SetUserAgent("lumo-cli/" + Version)
 	},
 }
 
 // Execute runs the root command.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		p := getPrinter()
-		if p.IsJSON() {
-			p.PrintError(err)
-		} else {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		}
-
-		// Structured exit codes
-		switch e := err.(type) {
-		case *client.APIError:
-			switch {
-			case e.StatusCode == 401 || e.StatusCode == 403:
-				os.Exit(2) // auth error
-			case e.StatusCode == 404:
-				os.Exit(3) // not found
-			default:
-				os.Exit(1)
-			}
-		default:
-			os.Exit(1)
+	err := rootCmd.Execute()
+	if err == nil {
+		return
+	}
+	p := getPrinter()
+	hint := errorHint(err)
+	if p.IsJSON() {
+		p.PrintFailure(failureFromError(err, hint))
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		if hint != "" {
+			fmt.Fprintf(os.Stderr, "Hint:  %s\n", hint)
 		}
 	}
+	os.Exit(exitCode(err))
+}
+
+// errorHint returns the actionable next step for an error, if any.
+func errorHint(err error) string {
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Hint()
+	}
+	return ""
+}
+
+func failureFromError(err error, hint string) output.Failure {
+	f := output.Failure{Message: err.Error(), Hint: hint}
+	var apiErr *client.APIError
+	if errors.As(err, &apiErr) {
+		f.Status = apiErr.StatusCode
+		f.Code = apiErr.Code
+		f.Details = apiErr.Details
+	}
+	return f
+}
+
+func exitCode(err error) int {
+	if errors.Is(err, config.ErrNotAuthenticated) {
+		return ExitAuth
+	}
+	var apiErr *client.APIError
+	if !errors.As(err, &apiErr) {
+		return ExitGeneral
+	}
+	switch {
+	case apiErr.StatusCode == 401 || apiErr.StatusCode == 403:
+		return ExitAuth
+	case apiErr.StatusCode == 404:
+		return ExitNotFound
+	case apiErr.StatusCode == 400 || apiErr.StatusCode == 409 || apiErr.StatusCode == 422:
+		return ExitInput
+	case apiErr.StatusCode == 429:
+		return ExitRateLimit
+	}
+	return ExitGeneral
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&flagAPIKey, "api-key", "", "LumoAuth API key (overrides LUMO_API_KEY)")
-	rootCmd.PersistentFlags().StringVar(&flagOrgID, "org-id", "", "Organization ID (overrides LUMO_ORG_ID)")
-	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "", "Base URL (overrides LUMO_BASE_URL)")
-	rootCmd.PersistentFlags().StringVar(&flagProfile, "profile", "", "Named credentials profile (overrides LUMO_PROFILE and current_profile)")
-	rootCmd.PersistentFlags().StringVarP(&flagFormat, "output", "o", "", "Output format: table, json, yaml (default: table)")
-	rootCmd.PersistentFlags().BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification")
-	rootCmd.PersistentFlags().BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
-	rootCmd.PersistentFlags().BoolVarP(&flagVerbose, "verbose", "v", false, "Enable verbose output")
+	pf := rootCmd.PersistentFlags()
+	pf.StringVar(&flagAPIKey, "api-key", "", "Organization API key lmk_… (overrides LUMO_API_KEY)")
+	pf.StringVar(&flagOrgID, "org", "", "Organization slug (overrides LUMO_ORG and the active profile)")
+	// Kept for existing scripts; --org is the documented spelling.
+	pf.StringVar(&flagOrgID, "org-id", "", "Alias of --org")
+	_ = pf.MarkHidden("org-id")
+	pf.StringVar(&flagBaseURL, "base-url", "", "Base URL (overrides LUMO_BASE_URL)")
+	pf.StringVar(&flagProfile, "profile", "", "Named credentials profile (overrides LUMO_PROFILE and current_profile)")
+	pf.StringVarP(&flagFormat, "output", "o", "", "Output format: table, json, yaml (default: table; json when piped)")
+	pf.BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification (local dev only)")
+	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
+	pf.BoolVarP(&flagVerbose, "verbose", "v", false, "Enable verbose output")
 }
 
 // getConfig loads and validates the configuration.

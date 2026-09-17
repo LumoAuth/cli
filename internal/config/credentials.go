@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lumoauth/cli/internal/auth"
@@ -64,6 +65,9 @@ type Credentials struct {
 	RefreshToken string    `yaml:"refresh_token,omitempty"`
 	ExpiresAt    time.Time `yaml:"expires_at"`
 	TokenType    string    `yaml:"token_type,omitempty"` // usually "Bearer"
+	// Scopes granted to the access token (from the token response). Used by
+	// `lumo whoami` / `lumo doctor` to explain a 403 before it happens.
+	Scopes []string `yaml:"scopes,omitempty"`
 
 	// profile records which named profile these credentials were loaded
 	// from, so Save() writes back to the right slot. Not serialized.
@@ -371,6 +375,13 @@ func (c *Credentials) EnsureFresh(insecure bool) error {
 	if !c.IsExpired() {
 		return nil
 	}
+	return c.ForceRefresh(insecure)
+}
+
+// ForceRefresh exchanges the refresh token for a new access token even when
+// the current one has not expired locally — used after the server answers
+// 401 (revoked or clock skew). Persists the rotated tokens.
+func (c *Credentials) ForceRefresh(insecure bool) error {
 	if c.RefreshToken == "" {
 		return fmt.Errorf("access token expired and no refresh token stored")
 	}
@@ -380,7 +391,12 @@ func (c *Credentials) EnsureFresh(insecure bool) error {
 	if err != nil {
 		return err
 	}
+	c.ApplyToken(tok)
+	return c.Save()
+}
 
+// ApplyToken copies a token response into the credentials (without saving).
+func (c *Credentials) ApplyToken(tok *auth.TokenResponse) {
 	c.AccessToken = tok.AccessToken
 	if tok.RefreshToken != "" {
 		c.RefreshToken = tok.RefreshToken
@@ -389,5 +405,34 @@ func (c *Credentials) EnsureFresh(insecure bool) error {
 	if tok.TokenType != "" {
 		c.TokenType = tok.TokenType
 	}
-	return c.Save()
+	if tok.Scope != "" {
+		c.Scopes = auth.SplitScopes(tok.Scope)
+	}
+}
+
+// HasScope reports whether the token was granted the exact scope.
+func (c *Credentials) HasScope(scope string) bool {
+	if c == nil {
+		return false
+	}
+	for _, s := range c.Scopes {
+		if s == scope {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAdminAccess reports whether the token can reach the Admin API at all:
+// the blanket `admin` scope or at least one `admin:<resource>:<read|write>`.
+func (c *Credentials) HasAdminAccess() bool {
+	if c == nil {
+		return false
+	}
+	for _, s := range c.Scopes {
+		if s == "admin" || strings.HasPrefix(s, "admin:") {
+			return true
+		}
+	}
+	return false
 }

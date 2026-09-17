@@ -21,7 +21,7 @@ import (
 //     clientb: {org_id: clientb,    base_url: https://eu.app.lumoauth.dev, access_token: ...}
 //
 // Selection precedence: --profile flag > LUMO_PROFILE env > current_profile.
-// The --org-id flag still overrides the profile's org for a single command.
+// The --org flag still overrides the profile's org for a single command.
 
 var profileCmd = &cobra.Command{
 	Use:     "profile",
@@ -241,7 +241,9 @@ func isInteractive() bool {
 }
 
 func init() {
-	profileCreateCmd.Flags().StringVar(&profileCreateOrgID, "org-id", "", "Organization slug this profile targets")
+	profileCreateCmd.Flags().StringVar(&profileCreateOrgID, "org", "", "Organization slug this profile targets")
+	profileCreateCmd.Flags().StringVar(&profileCreateOrgID, "org-id", "", "Alias of --org")
+	_ = profileCreateCmd.Flags().MarkHidden("org-id")
 	profileCreateCmd.Flags().StringVar(&profileCreateBaseURL, "base-url", "", "LumoAuth base URL this profile targets")
 	profileCreateCmd.Flags().BoolVar(&profileCreateUse, "use", false, "Make the new profile the current profile")
 	profileDeleteCmd.Flags().BoolVarP(&profileDeleteForce, "force", "f", false, "Delete without confirmation")

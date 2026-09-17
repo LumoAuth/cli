@@ -1,13 +1,9 @@
 package cmd
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -76,23 +72,12 @@ type sandboxListResponse struct {
 	Data []sandboxRow `json:"data"`
 }
 
-func devHTTPClient(insecure bool) *http.Client {
-	tr := &http.Transport{}
-	if insecure {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-	return &http.Client{Transport: tr, Timeout: 30 * time.Second}
-}
-
 func runDevStart(cmd *cobra.Command, args []string) error {
-	cfg, err := getConfigValidated()
+	c, err := getClient()
 	if err != nil {
 		return err
 	}
-	auth, err := authHeader(cfg)
-	if err != nil {
-		return err
-	}
+	cfg := c.Config()
 
 	body := map[string]interface{}{}
 	if devStartName != "" {
@@ -101,30 +86,19 @@ func runDevStart(cmd *cobra.Command, args []string) error {
 	if devStartTTL > 0 {
 		body["ttl_hours"] = devStartTTL
 	}
-	bodyJSON, _ := json.Marshal(body)
 
-	url := fmt.Sprintf("%s/orgs/%s/api/v1/admin/sandbox/spawn",
-		strings.TrimRight(cfg.BaseURL, "/"), cfg.OrgID)
-	req, _ := http.NewRequest("POST", url, strings.NewReader(string(bodyJSON)))
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-
-	resp, err := devHTTPClient(cfg.Insecure).Do(req)
+	resp, err := c.Post("/sandbox/spawn", body)
 	if err != nil {
-		return err
+		return fmt.Errorf("spawn sandbox: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 201 && resp.StatusCode != 200 {
-		var errBody map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("spawn failed (HTTP %d): %v", resp.StatusCode, errBody)
+	var out sandboxResponse
+	if err := json.Unmarshal(resp, &out); err != nil {
+		return fmt.Errorf("decode spawn response: %w", err)
 	}
 
-	var out sandboxResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return err
+	if getPrinter().IsJSON() {
+		getPrinter().PrintResult(resp)
+		return nil
 	}
 
 	fmt.Fprintf(os.Stderr, "✓ Sandbox spawned\n")
@@ -135,7 +109,7 @@ func runDevStart(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "Use it like any other org:")
-	fmt.Fprintf(os.Stderr, "  lumo --org-id %s users list\n", out.Data.Slug)
+	fmt.Fprintf(os.Stderr, "  lumo --org %s users list\n", out.Data.Slug)
 	fmt.Fprintf(os.Stderr, "  curl %s/orgs/%s/api/v1/me  -H \"Authorization: Bearer ...\"\n", cfg.BaseURL, out.Data.Slug)
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintf(os.Stderr, "Tear down with: lumo dev stop %s\n", out.Data.Slug)
@@ -143,73 +117,37 @@ func runDevStart(cmd *cobra.Command, args []string) error {
 }
 
 func runDevStop(cmd *cobra.Command, args []string) error {
-	cfg, err := getConfigValidated()
-	if err != nil {
-		return err
-	}
-	auth, err := authHeader(cfg)
+	c, err := getClient()
 	if err != nil {
 		return err
 	}
 	slug := args[0]
-
-	url := fmt.Sprintf("%s/orgs/%s/api/v1/admin/sandbox/%s/destroy",
-		strings.TrimRight(cfg.BaseURL, "/"), cfg.OrgID, slug)
-	req, _ := http.NewRequest("POST", url, nil)
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-
-	resp, err := devHTTPClient(cfg.Insecure).Do(req)
-	if err != nil {
-		return err
+	if _, err := c.Post(fmt.Sprintf("/sandbox/%s/destroy", slug), nil); err != nil {
+		return fmt.Errorf("destroy sandbox: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		var errBody map[string]interface{}
-		_ = json.NewDecoder(resp.Body).Decode(&errBody)
-		return fmt.Errorf("destroy failed (HTTP %d): %v", resp.StatusCode, errBody)
-	}
-	fmt.Fprintf(os.Stderr, "✓ Sandbox %s destroyed\n", slug)
+	getPrinter().PrintSuccess(fmt.Sprintf("Sandbox %s destroyed", slug))
 	return nil
 }
 
 func runDevList(cmd *cobra.Command, args []string) error {
-	cfg, err := getConfigValidated()
+	c, err := getClient()
 	if err != nil {
 		return err
 	}
-	auth, err := authHeader(cfg)
+	resp, err := c.Get("/sandbox", nil)
 	if err != nil {
-		return err
-	}
-
-	url := fmt.Sprintf("%s/orgs/%s/api/v1/admin/sandbox",
-		strings.TrimRight(cfg.BaseURL, "/"), cfg.OrgID)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := devHTTPClient(cfg.Insecure).Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		body, _ := json.Marshal(map[string]int{"status": resp.StatusCode})
-		return fmt.Errorf("list failed: %s", string(body))
+		return fmt.Errorf("list sandboxes: %w", err)
 	}
 	var out sandboxListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return err
+	if err := json.Unmarshal(resp, &out); err != nil {
+		return fmt.Errorf("decode sandbox list: %w", err)
 	}
 
-	if getPrinter().IsJSON() {
-		raw, _ := json.Marshal(out.Data)
-		fmt.Println(string(raw))
+	p := getPrinter()
+	if !p.IsTable() {
+		p.PrintResult(resp)
 		return nil
 	}
-
 	if len(out.Data) == 0 {
 		fmt.Fprintln(os.Stderr, "No active sandboxes.")
 		return nil
@@ -222,6 +160,6 @@ func runDevList(cmd *cobra.Command, args []string) error {
 		}
 		rows[i] = []string{s.Slug, s.Name, s.CreatedAt, exp}
 	}
-	getPrinter().PrintTable([]string{"Slug", "Name", "Created", "Expires"}, rows)
+	p.PrintTable([]string{"Slug", "Name", "Created", "Expires"}, rows)
 	return nil
 }
