@@ -221,25 +221,19 @@ type PaginationMeta struct {
 //  2. Otherwise fall back to a configured API key (lmk_…) for scripted use.
 //  3. Otherwise the request is unauthenticated and will fail at validate().
 func New(cfg *config.Config) *Client {
+	creds, _ := config.LoadCredentials()
+	// Inherit org / base URL / TLS policy from the active profile when not
+	// pinned, so commands work without --org or --insecure right after
+	// `lumo login`. Must happen before the transport is built.
+	cfg.InheritFromProfile(creds)
 	c := &Client{cfg: cfg, httpClient: NewHTTPClient(cfg.Insecure, 30*time.Second), method: AuthNone}
 
-	creds, _ := config.LoadCredentials()
-	if creds.HasToken() && creds.IsExpired() {
+	if creds.HasToken() && creds.IsExpired() && creds.OrgID == cfg.OrgID {
 		// Best-effort silent refresh. If it fails we fall through to the
 		// API-key path; Validate() surfaces a clear error when there is neither.
 		_ = creds.EnsureFresh(cfg.Insecure)
 	}
 	if creds != nil {
-		// Inherit org/base from the active profile when not pinned, so commands
-		// work without --org right after `lumo login`.
-		if c.cfg.OrgID == "" {
-			c.cfg.OrgID = creds.OrgID
-		}
-		if c.cfg.BaseURL == "" || c.cfg.BaseURL == config.DefaultBaseURL {
-			if creds.BaseURL != "" {
-				c.cfg.BaseURL = creds.BaseURL
-			}
-		}
 		if creds.HasToken() && !creds.IsExpired() && creds.OrgID == c.cfg.OrgID {
 			c.creds = creds
 			c.method = AuthToken

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net"
 	"net/url"
 	"strings"
 )
@@ -71,6 +72,12 @@ func IsLocalURL(u string) bool {
 	}
 	switch host {
 	case "localhost", "127.0.0.1", "::1", "0.0.0.0":
+		return true
+	}
+	// LAN / VM / container addresses (10/8, 172.16/12, 192.168/16, fc00::/7,
+	// link-local) almost always mean a developer instance with a self-signed
+	// or local-CA certificate.
+	if ip := net.ParseIP(host); ip != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast()) {
 		return true
 	}
 	return strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local")

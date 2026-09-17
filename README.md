@@ -611,6 +611,8 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 
 **Browser doesn't open during `lumo login`** — pass `--no-browser` and copy the verification URL by hand. The flow still works.
 
+**`tls: failed to verify certificate` against a dev server** — run `lumo login --insecure` once. The choice is stored in the profile and applies only to that profile's server, so later commands need no flag and production URLs keep full TLS verification. Localhost, `.local`, `http://` and private-network addresses (`10.x`, `172.16–31.x`, `192.168.x`) are detected automatically when you pick "Other / Self-hosted".
+
 **`stored credentials have expired`** — the CLI auto-refreshes with the stored refresh token; this error means the refresh token itself expired or was revoked. Run `lumo login` again (add `--profile <name>` if the expired credentials belong to a non-default profile).
 
 **`403 forbidden` right after `lumo login`** — the token has no admin scope: either you narrowed `--scope`, or an administrator narrowed the `lumoauth-cli:<slug>` client. The error's hint names the missing scope; `lumo login` again with it, or use an API key. `lumo doctor` shows the scopes in effect.

@@ -68,6 +68,10 @@ type Credentials struct {
 	// Scopes granted to the access token (from the token response). Used by
 	// `lumo whoami` / `lumo doctor` to explain a 403 before it happens.
 	Scopes []string `yaml:"scopes,omitempty"`
+	// Insecure records that this profile was logged in with TLS verification
+	// disabled (--insecure, or a local/private dev URL). It applies only to
+	// requests to this profile's own BaseURL — see InsecureFor.
+	Insecure bool `yaml:"insecure,omitempty"`
 
 	// profile records which named profile these credentials were loaded
 	// from, so Save() writes back to the right slot. Not serialized.
@@ -386,7 +390,7 @@ func (c *Credentials) ForceRefresh(insecure bool) error {
 		return fmt.Errorf("access token expired and no refresh token stored")
 	}
 
-	client := auth.New(c.BaseURL, c.OrgID, insecure)
+	client := auth.New(c.BaseURL, c.OrgID, insecure || c.Insecure)
 	tok, err := client.Refresh(c.RefreshToken)
 	if err != nil {
 		return err
@@ -408,6 +412,17 @@ func (c *Credentials) ApplyToken(tok *auth.TokenResponse) {
 	if tok.Scope != "" {
 		c.Scopes = auth.SplitScopes(tok.Scope)
 	}
+}
+
+// InsecureFor reports whether TLS verification should be skipped for
+// requests to baseURL because this profile was set up that way. It never
+// applies to a different server, so a local dev profile can't weaken TLS for
+// a production URL passed with --base-url.
+func (c *Credentials) InsecureFor(baseURL string) bool {
+	if c == nil || !c.Insecure || c.BaseURL == "" {
+		return false
+	}
+	return strings.TrimRight(c.BaseURL, "/") == strings.TrimRight(baseURL, "/")
 }
 
 // HasScope reports whether the token was granted the exact scope.

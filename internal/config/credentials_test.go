@@ -347,3 +347,39 @@ func TestCredentialsFilePermissions(t *testing.T) {
 		t.Errorf("credentials file perm = %o, want 600", perm)
 	}
 }
+
+func TestInsecureIsScopedToTheProfileServer(t *testing.T) {
+	setupDir(t)
+	creds := &Credentials{OrgID: "acme-corp", BaseURL: "https://192.168.1.172:8000/", AccessToken: "at", Insecure: true}
+	if err := SaveProfile("default", creds, true); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := LoadCredentials()
+
+	// Same server (trailing slash irrelevant): inherited.
+	cfg := &Config{BaseURL: DefaultBaseURL}
+	cfg.InheritFromProfile(stored)
+	if cfg.BaseURL != "https://192.168.1.172:8000/" || !cfg.Insecure || cfg.OrgID != "acme-corp" {
+		t.Fatalf("expected org, base URL and insecure inherited, got %+v", cfg)
+	}
+
+	// A different server pinned by the user: never inherits insecure.
+	other := &Config{BaseURL: "https://app.example.com"}
+	other.InheritFromProfile(stored)
+	if other.Insecure {
+		t.Fatal("insecure must not leak to a different server")
+	}
+}
+
+func TestIsLocalURLCoversPrivateNetworks(t *testing.T) {
+	for _, u := range []string{"https://192.168.1.172:8000", "https://10.0.0.5", "https://172.20.1.1:8443", "https://localhost:8000", "http://anything.example", "https://[fd00::1]:8000", "https://lumo.local"} {
+		if !IsLocalURL(u) {
+			t.Errorf("IsLocalURL(%q) = false, want true", u)
+		}
+	}
+	for _, u := range []string{"https://app.lumoauth.dev", "https://8.8.8.8", "https://172.32.0.1"} {
+		if IsLocalURL(u) {
+			t.Errorf("IsLocalURL(%q) = true, want false", u)
+		}
+	}
+}

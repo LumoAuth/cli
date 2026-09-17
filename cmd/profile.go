@@ -189,6 +189,7 @@ var profileShowCmd = &cobra.Command{
 				"current":    name == store.CurrentProfile,
 				"org_id":     c.OrgID,
 				"base_url":   c.BaseURL,
+				"insecure":   c.Insecure,
 				"user_email": c.UserEmail,
 				"status":     profileStatus(c),
 				"expires_at": c.ExpiresAt,
@@ -199,6 +200,9 @@ var profileShowCmd = &cobra.Command{
 		fmt.Printf("Profile:    %s\n", name)
 		fmt.Printf("Org:        %s\n", c.OrgID)
 		fmt.Printf("Base URL:   %s\n", c.BaseURL)
+		if c.Insecure {
+			fmt.Printf("TLS:        verification off for this server (set at login)\n")
+		}
 		if c.UserEmail != "" {
 			fmt.Printf("User:       %s\n", c.UserEmail)
 		}

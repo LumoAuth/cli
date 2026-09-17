@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -99,14 +101,10 @@ var whoamiCmd = &cobra.Command{
 			"org":      cfg.OrgID,
 			"base_url": cfg.BaseURL,
 		}
-		if creds != nil {
-			if info["org"] == "" {
-				info["org"] = creds.OrgID
-			}
-			if creds.BaseURL != "" && (cfg.BaseURL == "" || cfg.BaseURL == config.DefaultBaseURL) {
-				info["base_url"] = creds.BaseURL
-			}
-		}
+		cfg.InheritFromProfile(creds)
+		info["org"] = cfg.OrgID
+		info["base_url"] = cfg.BaseURL
+		info["tls_verify"] = !cfg.Insecure
 
 		switch {
 		case creds.HasToken() && !creds.IsExpired():
@@ -134,6 +132,9 @@ var whoamiCmd = &cobra.Command{
 			fmt.Printf("Profile:    %s\n", profile)
 			fmt.Printf("Org:        %s\n", info["org"])
 			fmt.Printf("Base URL:   %s\n", info["base_url"])
+			if cfg.Insecure {
+				fmt.Println("TLS:        verification off (local dev)")
+			}
 			switch info["auth"] {
 			case "token":
 				fmt.Printf("Auth:       login token (expires %s)\n", info["expires_at"])
@@ -269,8 +270,12 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		if err := config.ValidateProfileName(profile); err != nil {
 			return err
 		}
-		creds := &config.Credentials{BaseURL: baseURL, OrgID: orgID}
+		creds := &config.Credentials{BaseURL: baseURL, OrgID: orgID, Insecure: loginInsecure}
 		creds.ApplyToken(result.Token)
+		// Best effort: record who signed in so whoami/doctor can say so.
+		if email := fetchIdentityEmail(client, creds.AccessToken); email != "" {
+			creds.UserEmail = email
+		}
 		if len(creds.Scopes) == 0 {
 			// Servers that omit `scope` on success granted what was requested.
 			creds.Scopes = scopes
@@ -280,7 +285,13 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		}
 
 		fmt.Fprintf(os.Stderr, "✓ Logged in to %s. Credentials saved to profile %q in %s\n", orgID, profile, config.CredentialsPath())
+		if creds.UserEmail != "" {
+			fmt.Fprintf(os.Stderr, "  Signed in as:   %s\n", creds.UserEmail)
+		}
 		fmt.Fprintf(os.Stderr, "  Granted scopes: %s\n", strings.Join(creds.Scopes, " "))
+		if creds.Insecure {
+			fmt.Fprintf(os.Stderr, "  TLS verification is off for %s in this profile (remembered; other servers are unaffected).\n", baseURL)
+		}
 		if !creds.HasAdminAccess() {
 			fmt.Fprintln(os.Stderr, "  ! No admin scope was granted, so 'lumo' resource commands will be refused (403).")
 			fmt.Fprintln(os.Stderr, "    Ask an administrator to allow the 'admin' scope on the 'lumoauth-cli' client, or use an API key.")
@@ -288,6 +299,32 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "  Next: lumo doctor")
 		return nil
 	}
+}
+
+// fetchIdentityEmail asks /me who the token belongs to. Errors are ignored:
+// the login already succeeded and the email is only for display.
+func fetchIdentityEmail(c *auth.Client, accessToken string) string {
+	req, err := http.NewRequest("GET", c.BaseURL+"/orgs/"+c.OrgID+"/api/v1/me", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var me struct {
+		Email string `json:"email"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&me) != nil {
+		return ""
+	}
+	return me.Email
 }
 
 // stdinReader is shared across promptString calls so bufio's read-ahead
@@ -365,7 +402,7 @@ func promptRegion() (string, error) {
 	}
 	url = strings.TrimSuffix(url, "/")
 	if config.IsLocalURL(url) && !loginInsecure {
-		fmt.Fprintln(os.Stderr, "  (local URL detected — skipping TLS verification)")
+		fmt.Fprintln(os.Stderr, "  (local or private-network URL detected — skipping TLS verification for this server)")
 		loginInsecure = true
 	}
 	return url, nil

@@ -105,6 +105,10 @@ func Load(flagAPIKey, flagOrgID, flagBaseURL, flagFormat string, flagInsecure bo
 // `--org-id` on every command.
 func (c *Config) Validate() error {
 	creds, _ := LoadCredentials()
+	// Inherit org / base URL / TLS policy from the active profile first, so
+	// the silent refresh below talks to the right server with the right TLS
+	// settings.
+	c.InheritFromProfile(creds)
 	// Silently refresh when the access token has expired but a refresh
 	// token is on disk. The CLI's device-flow access tokens are only valid
 	// for an hour, so without this every command after the first hour fails
@@ -112,20 +116,7 @@ func (c *Config) Validate() error {
 	// Failure here is not fatal — we fall through to the API-key path or
 	// the helpful error below.
 	if creds.HasToken() && creds.IsExpired() {
-		_ = creds.EnsureFresh(c.Insecure)
-	}
-	// Inherit org/base URL from the active profile whenever it pins them —
-	// even token-less profiles (created via `lumo profile create`) provide
-	// this context so an API key + profile combination works without --org-id.
-	if creds != nil {
-		if c.OrgID == "" {
-			c.OrgID = creds.OrgID
-		}
-		if c.BaseURL == "" || c.BaseURL == DefaultBaseURL {
-			if creds.BaseURL != "" {
-				c.BaseURL = creds.BaseURL
-			}
-		}
+		_ = creds.EnsureFresh(c.Insecure || creds.InsecureFor(c.BaseURL))
 	}
 	if !(creds.HasToken() && !creds.IsExpired()) && c.APIKey == "" {
 		baseURL := c.BaseURL
@@ -161,6 +152,26 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("organization slug is required. Pass --org <slug>, set LUMO_ORG, or run 'lumo login --org <slug>'")
 	}
 	return nil
+}
+
+// InheritFromProfile fills settings the user did not pin (flag, env, config
+// file) from the active profile: organization, base URL and — only for that
+// profile's own server — the "skip TLS verification" choice made at login.
+// Even token-less profiles (`lumo profile create`) provide org/base URL so an
+// API key + profile combination works without --org.
+func (c *Config) InheritFromProfile(creds *Credentials) {
+	if creds == nil {
+		return
+	}
+	if c.OrgID == "" {
+		c.OrgID = creds.OrgID
+	}
+	if (c.BaseURL == "" || c.BaseURL == DefaultBaseURL) && creds.BaseURL != "" {
+		c.BaseURL = creds.BaseURL
+	}
+	if !c.Insecure && creds.InsecureFor(c.BaseURL) {
+		c.Insecure = true
+	}
 }
 
 // apiKeysSettingsURL builds the dashboard URL the user can visit to mint

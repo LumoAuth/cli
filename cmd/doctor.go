@@ -54,14 +54,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 	profile := config.ActiveProfileName()
 	creds, _ := config.LoadCredentials()
-	if creds != nil {
-		if cfg.OrgID == "" {
-			cfg.OrgID = creds.OrgID
-		}
-		if (cfg.BaseURL == "" || cfg.BaseURL == config.DefaultBaseURL) && creds.BaseURL != "" {
-			cfg.BaseURL = creds.BaseURL
-		}
-	}
+	cfg.InheritFromProfile(creds)
 	add(doctorCheck{Name: "profile", Status: "ok", Detail: fmt.Sprintf("%s (%s)", profile, config.CredentialsPath())})
 	if cfg.OrgID == "" {
 		add(doctorCheck{Name: "organization", Status: "fail", Detail: "no organization selected",
@@ -69,7 +62,11 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return finishDoctor(p, checks)
 	}
 	add(doctorCheck{Name: "organization", Status: "ok", Detail: cfg.OrgID})
-	add(doctorCheck{Name: "server", Status: "ok", Detail: cfg.BaseURL})
+	serverDetail := cfg.BaseURL
+	if cfg.Insecure {
+		serverDetail += " (TLS verification off)"
+	}
+	add(doctorCheck{Name: "server", Status: "ok", Detail: serverDetail})
 
 	// 2. Credential ---------------------------------------------------------
 	c := client.New(cfg)
@@ -113,7 +110,7 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
 			hint = "Organization slug not found on this server; check --org"
 		} else if strings.Contains(strings.ToLower(detail), "certificate") || strings.Contains(strings.ToLower(detail), "tls") {
-			hint = "TLS verification failed; for a local dev server pass --insecure"
+			hint = "TLS verification failed. For a local dev server with a self-signed or local-CA certificate, run 'lumo login --insecure' once (remembered for this profile and server), or pass --insecure"
 		}
 		add(doctorCheck{Name: "discovery", Status: "fail", Detail: detail, Hint: hint})
 		return finishDoctor(p, checks)
