@@ -33,6 +33,9 @@ The CLI now covers the full first-15-minutes loop without leaving the terminal:
 | `lumo tunnel --to <url>` | Forward live webhook events to localhost (like `stripe listen`). |
 | `lumo init --framework <name>` | Scaffold a working starter project (next, express, fastapi, go) wired to your org. |
 | `lumo --version` | Print version, commit, build date, Go version. |
+| `lumo mfa policy get/set` / `mfa coverage` | The organization MFA policy (partial updates) and the enrollment coverage report. |
+| `lumo users authenticators list/remove` / `users tap` | Per-user factors and temporary access codes for locked-out users (replaces `users mfa-reset`). |
+| `lumo users identities list/link/unlink` / `identities legacy-saml` | A user's SAML / LDAP / social links, and the report + bulk relink for legacy SAML users. |
 
 The full pre-existing surface (users, roles, groups, apps, agents, webhooks, permissions, settings, sessions, social, raw `api`) continues to work unchanged.
 
@@ -362,13 +365,48 @@ lumo users delete <id>
 lumo users block <id>
 lumo users unblock <id>
 lumo users set-password <id> --password "newpassword"
-lumo users mfa-reset <id>
+
+lumo users authenticators list <user-id-or-email>          # ID, type, name, state, tier, default, last used + status
+lumo users authenticators remove <user-id> <authenticator-id> [--yes]   # e.g. totp:12 — a lost phone
+lumo users tap <user-id-or-email> --reason "Lost phone; verified by video call" [--ttl 60] [--multi-use] [--mfa-challenge <id>]
 
 lumo users roles get <user-id>
 lumo users roles set <user-id> --roles admin,editor
 lumo users groups get <user-id>
 lumo users groups set <user-id> --groups team-a,team-b
 ```
+
+Admins can no longer switch MFA off for a user: `lumo users mfa-reset` is deprecated and fails without calling the server. For a locked-out user, issue a **temporary access code** with `lumo users tap` — it stands in for the second factor once (or until it expires with `--multi-use`), only lets the user sign in and enroll a new factor, and is printed exactly once. The reason is required, audited and shown to the user. When you are signed in with `lumo login`, the server also wants a fresh MFA check of your own: pass an approved `step_up` challenge id with `--mfa-challenge` (API keys are exempt). `lumo users authenticators remove` revokes a single factor (asks for confirmation on a terminal; scripts must pass `--yes`); if MFA is required, the user enrolls again at next sign-in.
+
+### Federated identities (SAML / LDAP relink)
+
+```bash
+lumo users identities list <user-id-or-email>                     # SAML IdP + NameID, LDAP directory + DN, social links
+lumo users identities link <user> --saml-idp <idp-id> --name-id <nameid> [--mfa-challenge <id>]
+lumo users identities link <user> --ldap-config <id> [--dn "uid=jane,ou=people,dc=acme,dc=com"] [--ldap-only] [--mfa-challenge <id>]
+lumo users identities unlink <user> --type saml|ldap|social [--yes] [--mfa-challenge <id>]
+
+lumo identities legacy-saml [--idp <idp-id>]                      # users with a legacy bare-NameID SAML link
+lumo identities legacy-saml --idp <idp-id> --relink --dry-run     # preview
+lumo identities legacy-saml --idp <idp-id> --relink [--user <id> ...] --yes
+```
+
+A link decides which external identity signs in as the user, so linking or unlinking signs the user out everywhere, emails them, and is audited (`identity.link.created` / `identity.link.removed` / `identity.link.bulk_relinked`). You cannot change the links of an account that holds permissions you lack. Without `--dn` the server looks the directory entry up by the user's email, then username; `--ldap-only` also disables the local password. A 409 (`identity_conflict`) means another user already holds that identity or the user is linked to a different federated source (unlink it first). Users whose SAML link predates per-IdP binding are refused at SAML sign-in while the organization has more than one SAML IdP — `lumo identities legacy-saml` lists them with the IdP whose allowed email domains claim them; `--relink` rebinds them (all users those domains claim, or the given `--user` ids). With `lumo login` tokens pass an approved `step_up` challenge with `--mfa-challenge` (API keys are exempt).
+
+### MFA policy and coverage
+
+```bash
+lumo mfa policy get
+lumo mfa policy set --requirement required --grace-days 14
+lumo mfa policy set --allowed-factors passkey,push,totp --min-tier-login 4 --min-tier-step-up 3
+lumo mfa policy set --trusted-device-days 30 --required-factors 1 \
+  --email-otp-counts=false --passwordless-passkey --block-voip
+lumo mfa policy set --data '{"sms_country_denylist":["XX"]}'   # fields without a flag
+lumo mfa coverage                # enrolled %, by factor type and tier, grace-period counts
+lumo mfa coverage -o json
+```
+
+`--requirement` is one of `off`, `optional`, `required`, `risk_based`; `--allowed-factors` takes `passkey,push,totp,sms_otp,email_otp`. `policy set` sends only the flags you pass (a partial update); tiers run from 1 (strongest, passkey) to 4 (basic, SMS/email).
 
 ### Roles
 
@@ -451,16 +489,18 @@ lumo logs export [--export-format csv|json] [--from ...] [--to ...]
 ### Settings
 
 ```bash
-lumo settings get tenant
+lumo settings get general
 lumo settings get auth
 lumo settings get branding
-lumo settings get ai
+lumo settings get all
 
-lumo settings update tenant --name "Acme Corp" --display-name "Acme Corporation"
-lumo settings update auth --mfa-required --session-lifetime 86400
-lumo settings update branding --primary-color "#5865F2" --logo-url "https://example.com/logo.png"
-lumo settings update ai --data '{"agentRegistrationEnabled": true}'
+lumo settings update org --set name="Acme Corp"
+lumo settings update auth --set session_timeout=86400 --set password_min_length=12
+lumo settings update branding --set primary_color="#5865F2" --set logo_url="https://example.com/logo.png"
+lumo settings update scim --data '{"allow_user_deletion": false}'
 ```
+
+Areas: `general`, `authentication` (`auth`), `security`, `email`, `branding`, `scim`, `organization` (`org`, `tenant`). `--set key=value` is repeatable and dotted keys nest. The MFA requirement and factors are not an `auth` setting any more — use `lumo mfa policy set`.
 
 ### Sessions & tokens
 
@@ -539,6 +579,7 @@ Run `lumo doctor -o json` first; if "ok" is false, fix the failing check's hint.
 To list users:     lumo users list -o json
 To create a role:  lumo roles create --name "Editor" --permissions doc.edit,doc.view -o json
 To check settings: lumo settings get authentication -o json
+To check MFA:      lumo mfa policy get -o json   (and: lumo mfa coverage -o json)
 To make raw calls: lumo api GET /users -o json      (paths are relative to the Admin API)
 
 Always use -o json for parseable output. On a 403, read "hint" in the error JSON:
@@ -580,6 +621,9 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 |---------|---------------|
 | `users list/get` | `admin:users:read` |
 | `users create/update/delete` | `admin:users:write` |
+| `users authenticators list`, `mfa coverage` | `admin:users:read` |
+| `users authenticators remove`, `users tap` | `admin:users:write` |
+| `mfa policy get` / `mfa policy set` | `admin:settings:read` / `admin:settings:write` |
 | `roles list/get` | `admin:roles:read` |
 | `roles create/update/delete` | `admin:roles:write` |
 | `groups list/get` | `admin:groups:read` |

@@ -44,6 +44,8 @@ type Client struct {
 	creds      *config.Credentials // set when a live token for this org is in use
 	httpClient *http.Client
 	method     AuthMethod
+	// extraHeaders are sent on every request from this client (see WithHeader).
+	extraHeaders map[string]string
 }
 
 // APIError is a structured error from the API, enriched with a hint that
@@ -125,6 +127,18 @@ func (e *APIError) detailStrings(keys ...string) []string {
 // "" when there is nothing useful to add.
 func (e *APIError) Hint() string {
 	portalKeys := apiKeysURL(e.BaseURL, e.OrgID)
+	switch e.Code {
+	case "step_up_required":
+		return "This action needs a fresh MFA check of your own (within 10 minutes). Approve a step_up challenge (POST /orgs/" + orDefault(e.OrgID, "<org>") + "/api/v1/mfa/challenges) and pass its id with --mfa-challenge, or use an organization API key."
+	case "mfa_reset_removed":
+		return "Admins can no longer switch MFA off for a user. Use 'lumo users tap <user> --reason ...' for a one-time recovery code, or 'lumo users authenticators remove <user> <authenticator-id>' for a lost device."
+	case "identity_conflict":
+		return "That identity is already linked to another user, or this user is linked to a different federated source. Check 'lumo users identities list <user>' and unlink the conflicting link first."
+	case "directory_lookup_failed":
+		return "The directory entry could not be found automatically. Pass the user's distinguished name with --dn."
+	case "last_factor_required":
+		return "This is the user's last sign-in method. Issue a temporary access code ('lumo users tap') so they can enroll a replacement first."
+	}
 	switch e.StatusCode {
 	case 401:
 		switch e.Auth {
@@ -255,6 +269,18 @@ func NewHTTPClient(insecure bool, timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: transport}
 }
 
+// WithHeader returns a copy of the client that also sends name: value on
+// every request, e.g. X-MFA-Challenge for step-up protected endpoints.
+func (c *Client) WithHeader(name, value string) *Client {
+	cp := *c
+	cp.extraHeaders = make(map[string]string, len(c.extraHeaders)+1)
+	for k, v := range c.extraHeaders {
+		cp.extraHeaders[k] = v
+	}
+	cp.extraHeaders[name] = value
+	return &cp
+}
+
 // Config returns the effective configuration (org/base URL after profile
 // inheritance).
 func (c *Client) Config() *config.Config { return c.cfg }
@@ -382,6 +408,9 @@ func (c *Client) applyHeaders(req *http.Request, hasBody bool) {
 	// credential callers and keeps every path identical.
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	req.Header.Set("User-Agent", userAgent)
+	for k, v := range c.extraHeaders {
+		req.Header.Set(k, v)
+	}
 }
 
 // userAgent is stamped by the command layer with the build version.

@@ -54,7 +54,8 @@ var settingsCmd = &cobra.Command{
 
 Areas:
   general         Name, display name, time zone, locale
-  authentication  Password policy, MFA, sessions, passkeys (alias: auth)
+  authentication  Password policy, sessions, passkeys (alias: auth);
+                  the MFA policy has its own command: 'lumo mfa policy'
   security        OAuth hardening switches (e.g. dpop_require_nonce)
   email           Sender name/address and provider
   branding        Login page logo, colours, texts (sanitised server-side)
@@ -67,7 +68,7 @@ Reads need the admin:settings:read scope, writes admin:settings:write.
 Examples:
   lumo settings get scim
   lumo settings update scim --set allow_user_deletion=false --set deprovisioning_action=deactivate
-  lumo settings update authentication --set mfa_required=true
+  lumo settings update authentication --set session_timeout=86400 --set password_min_length=12
   lumo settings update branding --data '{"primary_color":"#0f766e"}'
   lumo settings get all         # every area in one document`,
 }

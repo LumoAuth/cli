@@ -187,3 +187,19 @@ func TestAPIKeyHintsWithoutToken(t *testing.T) {
 		t.Fatalf("unexpected legacy error text %q", e.Error())
 	}
 }
+
+func TestMfaErrorHints(t *testing.T) {
+	cases := map[string]string{
+		"step_up_required":  "--mfa-challenge",
+		"mfa_reset_removed": "lumo users tap",
+	}
+	for code, want := range cases {
+		e := &APIError{StatusCode: 403, Code: code, OrgID: "acme"}
+		if code == "mfa_reset_removed" {
+			e.StatusCode = 410
+		}
+		if h := e.Hint(); !strings.Contains(h, want) {
+			t.Errorf("hint for %s = %q, want it to mention %q", code, h, want)
+		}
+	}
+}

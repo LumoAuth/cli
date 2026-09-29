@@ -373,32 +373,6 @@ var usersSetPasswordCmd = &cobra.Command{
 	},
 }
 
-var usersMfaResetCmd = &cobra.Command{
-	Use:   "mfa-reset <user-id>",
-	Short: "Reset a user's MFA enrollment",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		c, err := getClient()
-		if err != nil {
-			return err
-		}
-		p := getPrinter()
-
-		resp, err := c.Post(fmt.Sprintf("/users/%s/mfa/reset", args[0]), nil)
-		if err != nil {
-			return err
-		}
-
-		if !p.IsTable() {
-			p.PrintResult(json.RawMessage(resp))
-			return nil
-		}
-
-		p.PrintSuccess("MFA reset")
-		return nil
-	},
-}
-
 // ── Sub-resource: roles ──────────────────────────────────────────────
 
 var usersRolesCmd = &cobra.Command{
