@@ -1,11 +1,13 @@
 "use client";
 
-import { SignIn, UserButton, useLumoAuth } from "@lumoauth/nextjs";
+import { SignIn, UserButton, useAuth } from "@lumoauth/nextjs";
 
 export default function Home() {
-  const { isAuthenticated, user } = useLumoAuth();
+  const { isLoaded, isSignedIn, user } = useAuth();
 
-  if (!isAuthenticated) {
+  if (!isLoaded) return null;
+
+  if (!isSignedIn) {
     return (
       <main style={{ padding: "4rem", maxWidth: 480, margin: "0 auto" }}>
         <h1>LumoAuth Starter</h1>
@@ -18,7 +20,7 @@ export default function Home() {
   return (
     <main style={{ padding: "4rem", maxWidth: 480, margin: "0 auto" }}>
       <header style={{ display: "flex", justifyContent: "space-between" }}>
-        <h1>Welcome, {user?.name ?? user?.email}</h1>
+        <h1>Welcome, {user?.displayName ?? user?.email}</h1>
         <UserButton />
       </header>
       <p>You're authenticated. Build something here.</p>

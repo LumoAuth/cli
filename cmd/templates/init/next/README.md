@@ -30,5 +30,5 @@ You still need a real OAuth client on the LumoAuth side. From the dashboard:
 `authorization_code,refresh_token`. Then update `.env.local`:
 
 ```
-NEXT_PUBLIC_LUMO_CLIENT_ID=...the client id from the dashboard...
+NEXT_PUBLIC_LUMOAUTH_CLIENT_ID=...the client id from the dashboard...
 ```

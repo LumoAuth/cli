@@ -2,7 +2,7 @@
 
 ```bash
 npm install
-node server.js
+npm start
 ```
 
 `/auth/login` → LumoAuth → `/auth/callback` → session cookie → `/`.

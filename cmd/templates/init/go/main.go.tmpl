@@ -25,6 +25,9 @@ func main() {
 		ClientSecret:  os.Getenv("LUMO_CLIENT_SECRET"),
 		SessionSecret: os.Getenv("SESSION_SECRET"),
 		CallbackPath:  "/auth/callback",
+		// The session cookie is Secure by default. Plain-HTTP localhost needs
+		// it off; set APP_ENV=production when you deploy behind HTTPS.
+		CookieSecure: lumoauth.Bool(os.Getenv("APP_ENV") == "production"),
 	})
 	if err != nil {
 		log.Fatal(err)

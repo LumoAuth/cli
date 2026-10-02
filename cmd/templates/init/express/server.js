@@ -19,8 +19,9 @@ app.use(lumoAuthMiddleware({
   baseUrl: process.env.LUMO_BASE_URL,
   organization: process.env.LUMO_ORG_ID,
   clientId: process.env.LUMO_CLIENT_ID,
-  clientSecret: process.env.LUMO_CLIENT_SECRET,
-  callbackPath: "/auth/callback",
+  // Leave LUMO_CLIENT_SECRET empty for a public (PKCE-only) client such as
+  // the Starter App.
+  clientSecret: process.env.LUMO_CLIENT_SECRET || undefined,
 }));
 
 app.get("/", (req, res) => {

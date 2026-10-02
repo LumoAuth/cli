@@ -1,5 +1,4 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
-lumoauth>=1.0.0
+lumoauth[fastapi]>=1.0.0
 python-dotenv>=1.0.0
-itsdangerous>=2.1.2
