@@ -680,7 +680,7 @@ Releases are cut with [GoReleaser](https://goreleaser.com) (config:
 matrix, publishes the GitHub release with `checksums.txt`, and pushes
 package-manager manifests:
 
-- **Homebrew** — formula committed to `lumoauth/homebrew-tap` (`Formula/lumo.rb`), with shell completions generated from the binary.
+- **Homebrew** — cask committed to `lumoauth/homebrew-tap` (`Casks/lumo.rb`), with shell completions generated from the binary.
 - **Scoop** — manifest committed to `lumoauth/scoop-bucket`.
 - **winget** — manifest pushed to the `lumoauth/winget-pkgs` fork on a per-version branch, with an automatic PR to `microsoft/winget-pkgs`.
 
@@ -689,7 +689,7 @@ Pre-releases (`-rc.*` etc.) skip all three (`skip_upload: auto`).
 ### One-time setup (before the first release with package managers)
 
 1. **Create the distribution repos** under the `lumoauth` org:
-   - `lumoauth/homebrew-tap` — empty public repo, default branch `main` (GoReleaser creates `Formula/lumo.rb`).
+   - `lumoauth/homebrew-tap` — empty public repo, default branch `main` (GoReleaser creates `Casks/lumo.rb`).
    - `lumoauth/scoop-bucket` — empty public repo, default branch `main`.
    - `lumoauth/winget-pkgs` — a fork of [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs). Keep the fork's `master` synced (GoReleaser branches from it).
 2. **Provision the release token.** The `GITHUB_TOKEN` used by the release workflow must be able to push to those three repos — the default Actions token can't push outside its own repo, so use a PAT (classic: `repo` scope; fine-grained: contents read/write on the tap, bucket, and fork, plus pull-request write for winget) stored as a repo/org secret and exported as `GITHUB_TOKEN` for the goreleaser step.

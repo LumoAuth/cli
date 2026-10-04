@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
 
-version: 1
+version: 2
 
 project_name: lumo
 
@@ -35,7 +35,7 @@ builds:
       - -X github.com/lumoauth/cli/cmd.Date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
@@ -45,7 +45,7 @@ archives:
       {{- if .Arm }}v{{ .Arm }}{{ end }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: "checksums.txt"
@@ -61,29 +61,37 @@ checksum:
 #      winget-pkgs fork — the default Actions token can't push to other repos.
 # See README.md "Releasing" for details.
 
-brews:
+homebrew_casks:
   - name: lumo
     repository:
       owner: lumoauth
       name: homebrew-tap
       branch: main
       token: "{{ .Env.GITHUB_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://lumoauth.dev"
     description: "LumoAuth CLI — manage your organization's identity infrastructure"
     commit_author:
       name: lumoauth-bot
       email: bot@lumoauth.dev
-    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
-    install: |
-      bin.install "lumo"
-      generate_completions_from_executable(bin/"lumo", "completion")
-    test: |
-      assert_match version.to_s, shell_output("#{bin}/lumo --version")
+    commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
+    binaries:
+      - lumo
+    generate_completions_from_executable:
+      executable: lumo
+      args: ["completion"]
     caveats: |
       Get started with:
         lumo login --org <your-org-slug>
-    # Don't publish formulae for release candidates / pre-releases.
+    # The binaries aren't notarized, so strip the quarantine attribute or
+    # Gatekeeper will refuse to run them.
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/lumo"]
+          end
+    # Don't publish casks for release candidates / pre-releases.
     skip_upload: auto
 
 scoops:
@@ -137,7 +145,7 @@ winget:
     skip_upload: auto
 
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
