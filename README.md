@@ -495,6 +495,8 @@ Channel-aware upgrade — see [Upgrading](#upgrading).
 
 Spawn throwaway tenants for branch previews, PR environments, or scratch experiments. Each sandbox is a separate, fully-isolated tenant with its own slug; the daily cleanup cron deletes any sandbox past its TTL (default 24h, max 7 days).
 
+Spawning is the **Developer sandboxes** add-on ($199/month, Business plan only, up to 10 live sandboxes per owner). Without it `dev start` answers `403 feature_not_in_plan` and the CLI prints the billing page where an organization admin can add it. `dev list` and `dev stop` keep working so existing sandboxes can always be torn down.
+
 ```bash
 lumo dev start [--name pr-1234] [--ttl-hours 24]
 lumo dev list

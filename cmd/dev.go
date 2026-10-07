@@ -16,6 +16,11 @@ environments. Each sandbox is a separate tenant with its own slug and
 TTL — defaults to 24 hours, max 7 days. Sandboxes are auto-cleaned by
 the server's scheduled 'app:sandbox:cleanup' job.
 
+Spawning needs the Developer sandboxes add-on ($199/month, Business plan).
+Without it 'lumo dev start' answers 403 feature_not_in_plan and names the
+billing page where an organization admin can add it; 'list' and 'stop'
+keep working so existing sandboxes can always be torn down.
+
 Common workflows:
   lumo dev start --name pr-1234        # spawn for a PR
   lumo dev list                        # see what's running

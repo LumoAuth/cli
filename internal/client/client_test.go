@@ -203,3 +203,57 @@ func TestMfaErrorHints(t *testing.T) {
 		}
 	}
 }
+
+func TestBillingGateHints(t *testing.T) {
+	isolatedConfig(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(403)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/admin/sandbox/spawn"):
+			// FeatureGateSubscriber's body for a Business org without the add-on.
+			_, _ = w.Write([]byte(`{"error":"feature_not_in_plan","message":"Feature \"dev_sandboxes\" is not included in the current plan","feature":"dev_sandboxes","upgrade":{"addon":"dev_sandboxes"},"status":403}`))
+		case strings.HasSuffix(r.URL.Path, "/admin/pro/sandbox/spawn"):
+			_, _ = w.Write([]byte(`{"error":"feature_not_in_plan","message":"Feature \"dev_sandboxes\" is not included in the current plan","feature":"dev_sandboxes","upgrade":{"plan":"business","addon":"dev_sandboxes"},"status":403}`))
+		case strings.HasSuffix(r.URL.Path, "/admin/custom-domains"):
+			_, _ = w.Write([]byte(`{"error":"plan_limit_reached","message":"Plan limit reached for custom_domains","limit":"custom_domains","included":1,"current":1,"upgrade":{"plan":"business"},"status":403}`))
+		default:
+			_, _ = w.Write([]byte(`{"error":"forbidden","message":"Permission denied","status":403}`))
+		}
+	}))
+	defer srv.Close()
+
+	c := New(&config.Config{BaseURL: srv.URL, OrgID: "acme", APIKey: "lmk_test"})
+
+	_, err := c.Post("/sandbox/spawn", map[string]interface{}{})
+	apiErr, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("expected *APIError, got %T (%v)", err, err)
+	}
+	if apiErr.Code != "feature_not_in_plan" || apiErr.Feature != "dev_sandboxes" || apiErr.Upgrade["addon"] != "dev_sandboxes" {
+		t.Fatalf("billing fields not parsed: %+v", apiErr)
+	}
+	h := apiErr.Hint()
+	for _, want := range []string{"Developer sandboxes ($199/month)", "lumo dev start", "/orgs/acme/portal/billing?unlock=dev_sandboxes"} {
+		if !strings.Contains(h, want) {
+			t.Fatalf("hint %q lacks %q", h, want)
+		}
+	}
+	if strings.Contains(h, "Upgrade to") {
+		t.Fatalf("a Business org only needs the add-on, got %q", h)
+	}
+
+	// From Pro the server points at Business + the add-on.
+	_, err = c.Post("/pro/sandbox/spawn", map[string]interface{}{})
+	apiErr, _ = err.(*APIError)
+	if apiErr == nil || !strings.Contains(apiErr.Hint(), "Upgrade to the Business plan and add the Developer sandboxes") {
+		t.Fatalf("expected plan+add-on hint, got %v", err)
+	}
+
+	// Quota gates share the shape with a limit key instead of a feature.
+	_, err = c.Post("/custom-domains", map[string]interface{}{})
+	apiErr, _ = err.(*APIError)
+	if apiErr == nil || apiErr.Limit != "custom_domains" || !strings.Contains(apiErr.Hint(), "custom domains") || !strings.Contains(apiErr.Hint(), "Upgrade to the Business plan") {
+		t.Fatalf("expected limit hint, got %v", err)
+	}
+}

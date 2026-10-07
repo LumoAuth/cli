@@ -66,6 +66,11 @@ type APIError struct {
 	// BaseURL/OrgID for building portal links in hints.
 	BaseURL string
 	OrgID   string
+	// Billing gates: the feature key or limit key the plan lacks, and the
+	// cheapest unlock ({"addon": id} and/or {"plan": id}) the server suggests.
+	Feature string
+	Limit   string
+	Upgrade map[string]string
 }
 
 func (e *APIError) Error() string {
@@ -138,6 +143,10 @@ func (e *APIError) Hint() string {
 		return "The directory entry could not be found automatically. Pass the user's distinguished name with --dn."
 	case "last_factor_required":
 		return "This is the user's last sign-in method. Issue a temporary access code ('lumo users tap') so they can enroll a replacement first."
+	case "feature_not_in_plan":
+		return e.billingHint("The organization's plan does not include " + featureLabel(e.Feature) + ".")
+	case "plan_limit_reached":
+		return e.billingHint("The organization is at its plan limit for " + orDefault(strings.ReplaceAll(e.Limit, "_", " "), "this resource") + ".")
 	}
 	switch e.StatusCode {
 	case 401:
@@ -199,6 +208,79 @@ func orDefault(v, d string) string {
 		return d
 	}
 	return v
+}
+
+// billingHint turns the server's `upgrade` suggestion into a next step that
+// ends at the organization's billing page, where the add-on or plan is bought.
+func (e *APIError) billingHint(what string) string {
+	billing := billingURL(e.BaseURL, e.OrgID, orDefault(e.Feature, e.Limit))
+	var unlock string
+	switch {
+	case e.Upgrade["plan"] != "" && e.Upgrade["addon"] != "":
+		unlock = fmt.Sprintf("Upgrade to the %s plan and add the %s add-on", planLabel(e.Upgrade["plan"]), addonLabel(e.Upgrade["addon"]))
+	case e.Upgrade["addon"] != "":
+		unlock = fmt.Sprintf("Add the %s add-on", addonLabel(e.Upgrade["addon"]))
+	case e.Upgrade["plan"] != "":
+		unlock = fmt.Sprintf("Upgrade to the %s plan", planLabel(e.Upgrade["plan"]))
+	default:
+		return what + " Contact sales, or ask an organization admin to check " + billing
+	}
+	return fmt.Sprintf("%s %s at %s (an organization admin can do this; it takes effect immediately).", what, unlock, billing)
+}
+
+func billingURL(baseURL, orgID, unlock string) string {
+	if baseURL == "" {
+		baseURL = "<base-url>"
+	}
+	u := strings.TrimRight(baseURL, "/") + "/orgs/" + orDefault(orgID, "<org>") + "/portal/billing"
+	if unlock != "" {
+		u += "?unlock=" + url.QueryEscape(unlock)
+	}
+	return u
+}
+
+// Customer-facing names for the catalog ids that reach the CLI. Anything
+// else falls back to the id so a new add-on never prints as an empty string.
+func addonLabel(id string) string {
+	switch id {
+	case "dev_sandboxes":
+		return "Developer sandboxes ($199/month)"
+	case "fraud_shield":
+		return "Fraud Shield"
+	case "agent_governance":
+		return "Agent Governance"
+	case "audit_compliance":
+		return "Audit & Compliance"
+	case "fine_grained_authz":
+		return "Fine-grained authorization"
+	case "threat_detection":
+		return "Threat Detection"
+	case "byok_keys":
+		return "Bring-your-own signing keys"
+	}
+	return strings.ReplaceAll(id, "_", " ")
+}
+
+func planLabel(id string) string {
+	switch id {
+	case "free":
+		return "Developer"
+	case "pro":
+		return "Pro"
+	case "business":
+		return "Business"
+	}
+	return id
+}
+
+func featureLabel(id string) string {
+	switch id {
+	case "dev_sandboxes":
+		return "ephemeral sandbox organizations (lumo dev start)"
+	case "":
+		return "this feature"
+	}
+	return strings.ReplaceAll(id, "_", " ")
 }
 
 func apiKeysURL(baseURL, orgID string) string {
@@ -500,6 +582,11 @@ func (c *Client) apiError(status int, method, fullURL string, body []byte) *APIE
 		Message          string                 `json:"message"`
 		ErrorDescription string                 `json:"error_description"`
 		Details          map[string]interface{} `json:"details"`
+		// Billing gates ({error: feature_not_in_plan | plan_limit_reached})
+		// carry what was refused and the cheapest way to unlock it.
+		Feature string            `json:"feature"`
+		Limit   string            `json:"limit"`
+		Upgrade map[string]string `json:"upgrade"`
 	}
 	if err := json.Unmarshal(body, &probe); err != nil {
 		apiErr.Message = strings.TrimSpace(string(body))
@@ -518,5 +605,8 @@ func (c *Client) apiError(status int, method, fullURL string, body []byte) *APIE
 	apiErr.Message = probe.Message
 	apiErr.ErrorDescription = probe.ErrorDescription
 	apiErr.Details = probe.Details
+	apiErr.Feature = probe.Feature
+	apiErr.Limit = probe.Limit
+	apiErr.Upgrade = probe.Upgrade
 	return apiErr
 }
