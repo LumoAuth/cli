@@ -1,61 +1,148 @@
-# LumoAuth CLI
+<div align="center">
 
-A comprehensive command-line interface for managing your [LumoAuth](https://app.lumoauth.dev) organization — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
+# lumo
 
-Designed for **org admins**, **AI coding agents**, and **developers building** with LumoAuth.
+**The LumoAuth command line.**
+Users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, MFA policy, sandboxes — all from your terminal, and all scriptable.
+
+[![Release](https://img.shields.io/github/v/release/LumoAuth/cli?label=release&color=111)](https://github.com/LumoAuth/cli/releases/latest)
+[![Go](https://img.shields.io/github/go-mod/go-version/LumoAuth/cli?color=111)](go.mod)
+[![License](https://img.shields.io/github/license/LumoAuth/cli?color=111)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-111)](#installation)
+[![Built with GoReleaser](https://img.shields.io/badge/built%20with-GoReleaser-111)](.goreleaser.yaml)
+
+[Install](#installation) · [Quick start](#quick-start) · [Authentication](#authentication) · [Commands](#commands) · [AI agents](#ai-agent-integration) · [Troubleshooting](#troubleshooting)
+
+</div>
 
 ---
 
-## Quick Start
+```bash
+brew install lumoauth/tap/lumo      # macOS / Linux
+scoop install lumo                  # Windows (after: scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket)
+winget install --id LumoAuth.lumo   # Windows
+curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh   # anywhere else
+```
+
+```console
+$ lumo login --org acme-corp
+→ Starting login on https://app.lumoauth.dev for org acme-corp
+
+  ┌─ Open this URL in any browser to approve the login ─
+  │  https://app.lumoauth.dev/orgs/acme-corp/device
+  │  User code: WXYZ-1234
+  └─
+
+  (opened in your browser; or copy the URL above)
+Waiting for approval (Ctrl+C to cancel)...
+✓ Logged in to acme-corp. Credentials saved to profile "default" in ~/.lumoauth/credentials.yaml
+  Signed in as:   jane@acme.com
+  Next: lumo doctor
+
+$ lumo doctor
+✓ profile       default (~/.lumoauth/credentials.yaml)
+✓ organization  acme-corp
+✓ server        https://app.lumoauth.dev
+✓ credential    jane@acme.com, login token, expires 2026-10-07T04:12:09Z
+✓ scopes        openid profile email admin
+✓ discovery     issuer https://app.lumoauth.dev/orgs/acme-corp
+✓ admin api     GET /admin/organization succeeded
+
+lumo 1.1.0
+```
+
+Built for three audiences: **org admins** who want to get things done without the dashboard, **developers** wiring LumoAuth into an app, and **AI coding agents** that need predictable JSON, typed exit codes and errors that say how to fix themselves.
+
+## Highlights
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**Sign in like a human**
+`lumo login` runs the OAuth device flow in your browser, stores a scoped token with mode 0600, and refreshes it silently. Narrow scopes with `--scope` for least-privilege sessions.
+
+</td>
+<td width="33%" valign="top">
+
+**Know it works before you start**
+`lumo doctor` checks profile, org, server, credential, scopes and a real Admin API call, and prints the fix for anything that fails. Exit 1 on failure, so it belongs in CI.
+
+</td>
+<td width="33%" valign="top">
+
+**Sandboxes on demand**
+`lumo dev start` spawns an isolated throwaway tenant with a TTL. Perfect for PR previews. `lumo dev stop` or the cleanup cron takes it away.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**Webhooks to localhost**
+`lumo tunnel --to http://localhost:3000/hooks` replays live events to your dev server, like `stripe listen`. Filter by event type.
+
+</td>
+<td valign="top">
+
+**Scaffold a working app**
+`lumo init --framework next|express|fastapi|go` writes a minimal project already wired to your org, env files filled in.
+
+</td>
+<td valign="top">
+
+**Made for agents and scripts**
+Auto-JSON when piped, structured errors with a `hint`, typed exit codes, no prompts, and `lumo api` for any endpoint without a command.
+
+</td>
+</tr>
+</table>
+
+## Table of contents
+
+- [Quick start](#quick-start)
+- [Installation](#installation) — [Homebrew](#homebrew-macos--linux) · [Scoop](#scoop-windows) · [winget](#winget-windows) · [install script](#install-script-linux--macos--wsl) · [direct download](#direct-download) · [`go install`](#go-install) · [source](#build-from-source) · [completions](#shell-completions) · [upgrading](#upgrading)
+- [Authentication](#authentication) — [device flow](#a-device-flow-login-recommended-for-humans) · [API keys](#b-api-key-recommended-for-ci--scripting) · [profiles](#named-profiles-multi-org) · [precedence](#configuration-precedence)
+- [Commands](#commands)
+- [Output formats](#output-formats)
+- [AI agent integration](#ai-agent-integration)
+- [Environment variables](#environment-variables)
+- [API scopes](#api-scopes)
+- [Troubleshooting](#troubleshooting)
+- [Releasing](#releasing) · [Project structure](#project-structure) · [License](#license)
+
+---
+
+## Quick start
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
 lumo login --org acme-corp     # approve in the browser
 lumo doctor                    # ✓ credential, scopes, server, admin api
+lumo users list                # you're in
 ```
 
-The installer drops the binary in `~/.local/bin`; `lumo login` opens your browser for the device-flow approval and stores a token with the `admin` scope in `~/.lumoauth/credentials.yaml` (mode 0600); `lumo doctor` proves it works before you run anything else.
+The installer drops the binary in `~/.local/bin`. `lumo login` opens your browser for the device-flow approval and stores a token with the `admin` scope in `~/.lumoauth/credentials.yaml` (mode 0600). `lumo doctor` proves it works before you run anything else.
 
-For scripted/CI use see the [API key authentication](#authentication) section below.
+For CI and scripts, skip the browser and use an [API key](#b-api-key-recommended-for-ci--scripting):
 
----
-
-## What's new
-
-The CLI now covers the full first-15-minutes loop without leaving the terminal:
-
-| Command | Purpose |
-|---|---|
-| `lumo login [--scope …]` / `logout` / `whoami` | Browser-based OAuth 2.0 device-flow sign-in (RFC 8628) with explicit, narrowable scopes. |
-| `lumo doctor` | One command that checks profile, credential, scopes, server reachability and Admin API access, with a fix for every failure. |
-| `lumo org get` / `org update --set k=v` | The organization profile and its writable settings (`allow_root_admin_login`, `security.dpop_require_nonce`, …). |
-| `lumo dev start` / `dev list` / `dev stop` | Spawn ephemeral sandbox tenants — Neon-branch style — for branch previews and PR environments. |
-| `lumo tunnel --to <url>` | Forward live webhook events to localhost (like `stripe listen`). |
-| `lumo init --framework <name>` | Scaffold a working starter project (next, express, fastapi, go) wired to your org. |
-| `lumo --version` | Print version, commit, build date, Go version. |
-| `lumo mfa policy get/set` / `mfa coverage` | The organization MFA policy (partial updates) and the enrollment coverage report. |
-| `lumo users authenticators list/remove` / `users tap` | Per-user factors and temporary access codes for locked-out users (replaces `users mfa-reset`). |
-| `lumo users identities list/link/unlink` / `identities legacy-saml` | A user's SAML / LDAP / social links, and the report + bulk relink for legacy SAML users. |
-
-The full pre-existing surface (users, roles, groups, apps, agents, webhooks, permissions, settings, sessions, social, raw `api`) continues to work unchanged.
+```bash
+LUMO_API_KEY=lmk_… LUMO_ORG=acme-corp lumo users list -o json
+```
 
 ---
 
 ## Installation
 
-Pick the channel that matches your machine. Every channel installs the same
-statically linked binary; `lumo upgrade` later detects which one you used and
-upgrades through it.
+Every channel installs the same statically linked binary, and `lumo upgrade` later upgrades through whichever one you used.
 
-| Platform | Recommended | Also works |
+| | Recommended | Also works |
 |---|---|---|
-| macOS | Homebrew | install script, direct download, `go install` |
-| Linux | Homebrew or install script | direct download, `go install` |
-| Windows | Scoop or winget | direct download, `go install`, WSL + install script |
+| **macOS** | [Homebrew](#homebrew-macos--linux) | install script · direct download · `go install` |
+| **Linux** | [Homebrew](#homebrew-macos--linux) or the [install script](#install-script-linux--macos--wsl) | direct download · `go install` |
+| **Windows** | [Scoop](#scoop-windows) or [winget](#winget-windows) | direct download · `go install` · WSL + install script |
 
-Builds are published for **macOS** (Apple silicon, Intel), **Linux** (x86_64,
-arm64, i386) and **Windows** (x86_64, i386). There is no Windows arm64 build;
-use `go install` there.
+Builds ship for macOS (Apple silicon, Intel), Linux (x86_64, arm64, i386) and Windows (x86_64, i386). There is no Windows arm64 build; use `go install` there.
 
 ### Homebrew (macOS / Linux)
 
@@ -63,10 +150,7 @@ use `go install` there.
 brew install lumoauth/tap/lumo
 ```
 
-The tap is [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap)
-and `lumo` is published as a cask. On macOS the cask strips the Gatekeeper
-quarantine attribute for you, so the unsigned binary runs without a warning.
-Shell completions for bash, zsh and fish are installed alongside.
+The tap is [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap) and `lumo` is published as a cask. On macOS the cask strips the Gatekeeper quarantine attribute for you, so the unsigned binary runs without a warning. Shell completions for bash, zsh and fish are installed alongside.
 
 ```bash
 brew upgrade lumoauth/tap/lumo   # or just: lumo upgrade
@@ -79,8 +163,7 @@ scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket
 scoop install lumo
 ```
 
-The bucket is [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket).
-Upgrade with `scoop update lumo` or `lumo upgrade`.
+The bucket is [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket). Upgrade with `scoop update lumo` or `lumo upgrade`.
 
 ### winget (Windows)
 
@@ -88,12 +171,7 @@ Upgrade with `scoop update lumo` or `lumo upgrade`.
 winget install --id LumoAuth.lumo
 ```
 
-The package is submitted to
-[`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs/pulls?q=LumoAuth.lumo)
-automatically with each release; a new version is installable once Microsoft
-merges the submission, usually within a few days. If `winget` reports that it
-cannot find the package yet, use Scoop or the direct download in the meantime.
-Upgrade with `winget upgrade --id LumoAuth.lumo` or `lumo upgrade`.
+Each release is submitted to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs/pulls?q=LumoAuth.lumo) automatically and becomes installable once Microsoft merges it, usually within a few days. If `winget` cannot find the package yet, use Scoop or the direct download in the meantime. Upgrade with `winget upgrade --id LumoAuth.lumo` or `lumo upgrade`.
 
 ### Install script (Linux / macOS / WSL)
 
@@ -103,30 +181,20 @@ No `sudo` required.
 curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
 ```
 
-The script:
+The script detects your OS and architecture, downloads the latest release, verifies its SHA-256 against the release's `checksums.txt` (and refuses to install on a mismatch; `LUMO_SKIP_CHECKSUM=1` bypasses this, don't), installs `lumo` to `~/.local/bin`, and adds that directory to your shell's `PATH` for bash, zsh, fish or sh if needed. Restart your shell and run `lumo --version` to confirm.
 
-1. Detects your OS and architecture (x86_64 / arm64 / i386).
-2. Downloads the latest release from GitHub.
-3. Verifies the SHA-256 checksum against the release's `checksums.txt` and refuses to install if it does not match (`LUMO_SKIP_CHECKSUM=1` bypasses this; don't).
-4. Installs the `lumo` binary to `~/.local/bin`.
-5. Adds `~/.local/bin` to your shell's `PATH` (bash, zsh, fish, or sh) if it isn't already.
-
-Restart your shell (or `source` your profile) and run `lumo --version` to confirm.
-
-On macOS a binary installed this way is quarantined by Gatekeeper because it
-is not notarized. Either clear the attribute once or prefer Homebrew:
+On macOS a binary installed this way is quarantined by Gatekeeper because it is not notarized. Clear the attribute once, or prefer Homebrew:
 
 ```bash
 xattr -d com.apple.quarantine ~/.local/bin/lumo
 ```
 
-### Direct download
+<details>
+<summary><strong>Direct download</strong> — grab an archive from the releases page and verify it yourself</summary>
 
-Every release on the
-[releases page](https://github.com/LumoAuth/cli/releases/latest) ships an
-archive per platform plus `checksums.txt`. Archives are named
-`lumo_<OS>_<Arch>` with `OS` ∈ `Darwin`, `Linux`, `Windows` and `Arch` ∈
-`x86_64`, `arm64`, `i386`; Windows archives are `.zip`, the rest `.tar.gz`.
+<a name="direct-download"></a>
+
+Every release on the [releases page](https://github.com/LumoAuth/cli/releases/latest) ships an archive per platform plus `checksums.txt`. Archives are named `lumo_<OS>_<Arch>` with `OS` ∈ `Darwin`, `Linux`, `Windows` and `Arch` ∈ `x86_64`, `arm64`, `i386`; Windows archives are `.zip`, the rest `.tar.gz`.
 
 ```bash
 # Example: Linux x86_64
@@ -145,30 +213,36 @@ Expand-Archive lumo.zip -DestinationPath "$env:LOCALAPPDATA\Programs\lumo"
 # then add that directory to your PATH
 ```
 
-A hand-placed binary is still upgradable with `lumo upgrade`, which downloads
-and verifies the next release the same way.
+A hand-placed binary is still upgradable with `lumo upgrade`, which downloads and verifies the next release the same way.
 
-### `go install`
+</details>
 
-**Prerequisites:** Go 1.22+. Builds from source for whatever platform you are
-on, including ones without a published archive (for example Windows arm64).
+<details>
+<summary><strong><code>go install</code></strong> — build from the module for any platform Go supports</summary>
+
+<a name="go-install"></a>
+
+**Prerequisites:** Go 1.22+. Builds from source for whatever platform you are on, including ones without a published archive (for example Windows arm64).
 
 ```bash
 go install github.com/lumoauth/cli@latest          # latest release
 go install github.com/lumoauth/cli@v1.1.0          # a specific version
 ```
 
-The binary lands in `$(go env GOPATH)/bin` as `cli` because the module root
-is the main package; rename or alias it to `lumo`:
+The binary lands in `$(go env GOPATH)/bin` as `cli`, because the module root is the main package. Rename or alias it:
 
 ```bash
 mv "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/lumo"
 ```
 
-Note `lumo --version` reports `dev` for `go install` builds: the version,
-commit and date are injected only by the release pipeline.
+`lumo --version` reports `dev` for `go install` builds: the version, commit and date are injected only by the release pipeline.
 
-### Build from source
+</details>
+
+<details>
+<summary><strong>Build from source</strong></summary>
+
+<a name="build-from-source"></a>
 
 ```bash
 git clone https://github.com/LumoAuth/cli.git && cd cli
@@ -178,20 +252,17 @@ go build -o lumo .
 go install .
 ```
 
+</details>
+
 ### Shell completions
 
-Homebrew installs completions automatically. For every other channel generate
-them from the binary:
+Homebrew installs completions automatically. For every other channel, generate them from the binary:
 
 ```bash
-# bash
-lumo completion bash | sudo tee /etc/bash_completion.d/lumo > /dev/null
-# zsh
-lumo completion zsh > "${fpath[1]}/_lumo"
-# fish
-lumo completion fish > ~/.config/fish/completions/lumo.fish
-# PowerShell
-lumo completion powershell | Out-String | Invoke-Expression
+lumo completion bash | sudo tee /etc/bash_completion.d/lumo > /dev/null   # bash
+lumo completion zsh > "${fpath[1]}/_lumo"                                 # zsh
+lumo completion fish > ~/.config/fish/completions/lumo.fish               # fish
+lumo completion powershell | Out-String | Invoke-Expression               # PowerShell
 ```
 
 `lumo completion --help` has the full per-shell instructions.
@@ -344,6 +415,18 @@ lumo config set org_id acme-corp
 ---
 
 ## Commands
+
+Everything is `lumo <resource> <verb>`. Run `lumo --help` or `lumo <resource> --help` for the authoritative list.
+
+| Area | Commands |
+|---|---|
+| Session | [`login`](#login--logout--whoami) · `logout` · `whoami` · [`doctor`](#doctor) · [`profile`](#profile--named-credential-profiles) · [`upgrade`](#upgrade) · `config` |
+| Developer loop | [`dev`](#dev--ephemeral-sandbox-tenants) · [`tunnel`](#tunnel--forward-webhooks-to-localhost) · [`init`](#init--scaffold-a-starter-project) |
+| Organization | [`org`](#org--organization-profile-and-settings) · [`settings`](#settings) · [`mfa`](#mfa-policy-and-coverage) · [`social`](#social-login-providers) |
+| People & access | [`users`](#users) · [`identities`](#federated-identities-saml--ldap-relink) · [`roles`](#roles) · [`groups`](#groups) · [`permissions`](#permissions) |
+| Clients | [`apps`](#oauth-applications) · [`agents`](#ai-agents) · [`sessions` / `tokens`](#sessions--tokens) |
+| Events | [`webhooks`](#webhooks) · [`logs`](#audit-logs) |
+| Escape hatch | [`api`](#raw-api-access) |
 
 ### Global flags
 
@@ -777,32 +860,29 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 
 ## Releasing
 
-Releases are cut with [GoReleaser](https://goreleaser.com) (config:
-`.goreleaser.yaml`, schema v2). Tagging `vX.Y.Z` builds the archive
-matrix, publishes the GitHub release with `checksums.txt`, and pushes
-package-manager manifests:
+Releases are cut with [GoReleaser](https://goreleaser.com) from `.goreleaser.yaml` (schema v2). Pushing a `vX.Y.Z` tag builds the archive matrix, publishes the GitHub release with `checksums.txt`, and pushes package-manager manifests:
 
-- **Homebrew** — cask committed to `lumoauth/homebrew-tap` (`Casks/lumo.rb`), with shell completions generated from the binary.
-- **Scoop** — manifest committed to `lumoauth/scoop-bucket`.
-- **winget** — manifest pushed to the `lumoauth/winget-pkgs` fork on a per-version branch, with an automatic PR to `microsoft/winget-pkgs`.
+| Channel | Where it lands |
+|---|---|
+| Homebrew | cask `Casks/lumo.rb` in [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap), completions generated from the binary |
+| Scoop | `lumo.json` in [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket) |
+| winget | manifests pushed to the [`LumoAuth/winget-pkgs`](https://github.com/LumoAuth/winget-pkgs) fork on a `lumo-<version>` branch, with an automatic PR to `microsoft/winget-pkgs` |
 
-Pre-releases (`-rc.*` etc.) skip all three (`skip_upload: auto`).
+Pre-release tags (`-rc.*`, `-beta.*`) create the GitHub release but skip all three publishers (`skip_upload: auto`).
 
-### One-time setup (before the first release with package managers)
+```bash
+go test ./... && gofmt -l . && goreleaser check    # pre-flight (GoReleaser v2.x)
+goreleaser release --snapshot --clean              # rehearse: builds everything into dist/, publishes nothing
+git tag -a v1.2.0 -m v1.2.0 && git push origin v1.2.0
+GITHUB_TOKEN=<cross-repo PAT> goreleaser release --clean
+```
 
-1. **Create the distribution repos** under the `lumoauth` org:
-   - `lumoauth/homebrew-tap` — empty public repo, default branch `main` (GoReleaser creates `Casks/lumo.rb`).
-   - `lumoauth/scoop-bucket` — empty public repo, default branch `main`.
-   - `lumoauth/winget-pkgs` — a fork of [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs). Keep the fork's `master` synced (GoReleaser branches from it).
-2. **Provision the release token.** The `GITHUB_TOKEN` used by the release workflow must be able to push to those three repos — the default Actions token can't push outside its own repo, so use a PAT (classic: `repo` scope; fine-grained: contents read/write on the tap, bucket, and fork, plus pull-request write for winget) stored as a repo/org secret and exported as `GITHUB_TOKEN` for the goreleaser step.
-3. **First winget submission**: the very first `LumoAuth.lumo` PR to `microsoft/winget-pkgs` goes through manual moderation — expect a human review pass before it's merged; subsequent version PRs are largely automated.
+The token must be able to write to this repo, the tap, the bucket and the winget fork, and open PRs on `microsoft/winget-pkgs`; a classic PAT with the `repo` scope does. The version string is injected from the tag via ldflags, so there is nothing to bump in source.
 
-Validate config changes locally with `goreleaser check` (requires GoReleaser
-v2.10+ — the config is schema `version: 2` and uses `homebrew_casks`).
+<details>
+<summary><strong>Project structure</strong></summary>
 
----
-
-## Project structure
+<a name="project-structure"></a>
 
 ```
 cli/
@@ -836,6 +916,8 @@ cli/
     └── output/output.go               # Table/JSON/YAML output
 ```
 
+</details>
+
 ## License
 
-See the root repository license.
+[MIT](LICENSE) © 2026 LumoAuth LLC
