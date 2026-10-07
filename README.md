@@ -1,8 +1,8 @@
 # LumoAuth CLI
 
-A comprehensive command-line interface for managing your [LumoAuth](https://lumoauth.dev) organization — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
+A comprehensive command-line interface for managing your [LumoAuth](https://app.lumoauth.dev) organization — users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, permissions, settings, sessions, and more.
 
-Designed for **org admins**, **AI coding agents**, and **developers building local-first** with LumoAuth.
+Designed for **org admins**, **AI coding agents**, and **developers building** with LumoAuth.
 
 ---
 
@@ -676,7 +676,7 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 ## Releasing
 
 Releases are cut with [GoReleaser](https://goreleaser.com) (config:
-`.goreleaser.yaml`, schema v1). Tagging `vX.Y.Z` builds the archive
+`.goreleaser.yaml`, schema v2). Tagging `vX.Y.Z` builds the archive
 matrix, publishes the GitHub release with `checksums.txt`, and pushes
 package-manager manifests:
 
@@ -695,8 +695,8 @@ Pre-releases (`-rc.*` etc.) skip all three (`skip_upload: auto`).
 2. **Provision the release token.** The `GITHUB_TOKEN` used by the release workflow must be able to push to those three repos — the default Actions token can't push outside its own repo, so use a PAT (classic: `repo` scope; fine-grained: contents read/write on the tap, bucket, and fork, plus pull-request write for winget) stored as a repo/org secret and exported as `GITHUB_TOKEN` for the goreleaser step.
 3. **First winget submission**: the very first `LumoAuth.lumo` PR to `microsoft/winget-pkgs` goes through manual moderation — expect a human review pass before it's merged; subsequent version PRs are largely automated.
 
-Validate config changes locally with `goreleaser check` (use a GoReleaser
-v1.x binary — the config is schema `version: 1`).
+Validate config changes locally with `goreleaser check` (requires GoReleaser
+v2.10+ — the config is schema `version: 2` and uses `homebrew_casks`).
 
 ---
 

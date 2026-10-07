@@ -103,7 +103,7 @@ scoops:
       token: "{{ .Env.GITHUB_TOKEN }}"
     homepage: "https://lumoauth.dev"
     description: "LumoAuth CLI — manage your organization's identity infrastructure"
-    license: Proprietary
+    license: MIT
     commit_author:
       name: lumoauth-bot
       email: bot@lumoauth.dev
@@ -117,7 +117,7 @@ winget:
     publisher_url: "https://lumoauth.dev"
     publisher_support_url: "https://github.com/lumoauth/cli/issues"
     short_description: "LumoAuth CLI — manage your organization's identity infrastructure"
-    license: Proprietary
+    license: MIT
     homepage: "https://lumoauth.dev"
     commit_author:
       name: lumoauth-bot
