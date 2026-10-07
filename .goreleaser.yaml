@@ -72,8 +72,8 @@ homebrew_casks:
     homepage: "https://lumoauth.dev"
     description: "LumoAuth CLI — manage your organization's identity infrastructure"
     commit_author:
-      name: lumoauth-bot
-      email: bot@lumoauth.dev
+      name: lumoauth-team
+      email: team@lumoauth.dev
     commit_msg_template: "Brew cask update for {{ .ProjectName }} version {{ .Tag }}"
     binaries:
       - lumo
@@ -105,8 +105,8 @@ scoops:
     description: "LumoAuth CLI — manage your organization's identity infrastructure"
     license: MIT
     commit_author:
-      name: lumoauth-bot
-      email: bot@lumoauth.dev
+      name: lumoauth-team
+      email: team@lumoauth.dev
     commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
     skip_upload: auto
 
@@ -120,8 +120,8 @@ winget:
     license: MIT
     homepage: "https://lumoauth.dev"
     commit_author:
-      name: lumoauth-bot
-      email: bot@lumoauth.dev
+      name: lumoauth-team
+      email: team@lumoauth.dev
     commit_msg_template: "New version: {{ .PackageIdentifier }} {{ .Version }}"
     tags:
       - cli
