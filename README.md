@@ -43,30 +43,61 @@ The full pre-existing surface (users, roles, groups, apps, agents, webhooks, per
 
 ## Installation
 
-### Package managers (recommended)
+Pick the channel that matches your machine. Every channel installs the same
+statically linked binary; `lumo upgrade` later detects which one you used and
+upgrades through it.
 
-**Homebrew (macOS / Linux):**
+| Platform | Recommended | Also works |
+|---|---|---|
+| macOS | Homebrew | install script, direct download, `go install` |
+| Linux | Homebrew or install script | direct download, `go install` |
+| Windows | Scoop or winget | direct download, `go install`, WSL + install script |
+
+Builds are published for **macOS** (Apple silicon, Intel), **Linux** (x86_64,
+arm64, i386) and **Windows** (x86_64, i386). There is no Windows arm64 build;
+use `go install` there.
+
+### Homebrew (macOS / Linux)
 
 ```bash
 brew install lumoauth/tap/lumo
 ```
 
-**Scoop (Windows):**
+The tap is [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap)
+and `lumo` is published as a cask. On macOS the cask strips the Gatekeeper
+quarantine attribute for you, so the unsigned binary runs without a warning.
+Shell completions for bash, zsh and fish are installed alongside.
+
+```bash
+brew upgrade lumoauth/tap/lumo   # or just: lumo upgrade
+```
+
+### Scoop (Windows)
 
 ```powershell
 scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket
 scoop install lumo
 ```
 
-**winget (Windows):**
+The bucket is [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket).
+Upgrade with `scoop update lumo` or `lumo upgrade`.
+
+### winget (Windows)
 
 ```powershell
 winget install --id LumoAuth.lumo
 ```
 
-### One-line install script
+The package is submitted to
+[`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs/pulls?q=LumoAuth.lumo)
+automatically with each release; a new version is installable once Microsoft
+merges the submission, usually within a few days. If `winget` reports that it
+cannot find the package yet, use Scoop or the direct download in the meantime.
+Upgrade with `winget upgrade --id LumoAuth.lumo` or `lumo upgrade`.
 
-Works on **Linux**, **macOS**, and **Windows (WSL)** — no `sudo` required.
+### Install script (Linux / macOS / WSL)
+
+No `sudo` required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
@@ -74,17 +105,70 @@ curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
 
 The script:
 
-1. Detects your OS and architecture (amd64 / arm64).
+1. Detects your OS and architecture (x86_64 / arm64 / i386).
 2. Downloads the latest release from GitHub.
-3. Verifies the SHA-256 checksum.
+3. Verifies the SHA-256 checksum against the release's `checksums.txt` and refuses to install if it does not match (`LUMO_SKIP_CHECKSUM=1` bypasses this; don't).
 4. Installs the `lumo` binary to `~/.local/bin`.
 5. Adds `~/.local/bin` to your shell's `PATH` (bash, zsh, fish, or sh) if it isn't already.
 
 Restart your shell (or `source` your profile) and run `lumo --version` to confirm.
 
-### Build from source
+On macOS a binary installed this way is quarantined by Gatekeeper because it
+is not notarized. Either clear the attribute once or prefer Homebrew:
 
-**Prerequisites:** Go 1.22+
+```bash
+xattr -d com.apple.quarantine ~/.local/bin/lumo
+```
+
+### Direct download
+
+Every release on the
+[releases page](https://github.com/LumoAuth/cli/releases/latest) ships an
+archive per platform plus `checksums.txt`. Archives are named
+`lumo_<OS>_<Arch>` with `OS` ∈ `Darwin`, `Linux`, `Windows` and `Arch` ∈
+`x86_64`, `arm64`, `i386`; Windows archives are `.zip`, the rest `.tar.gz`.
+
+```bash
+# Example: Linux x86_64
+VERSION=$(curl -fsSL https://api.github.com/repos/LumoAuth/cli/releases/latest | grep tag_name | cut -d '"' -f4)
+curl -fsSLO "https://github.com/LumoAuth/cli/releases/download/${VERSION}/lumo_Linux_x86_64.tar.gz"
+curl -fsSLO "https://github.com/LumoAuth/cli/releases/download/${VERSION}/checksums.txt"
+sha256sum --check --ignore-missing checksums.txt      # shasum -a 256 on macOS
+tar -xzf lumo_Linux_x86_64.tar.gz lumo
+install -m 0755 lumo ~/.local/bin/lumo
+```
+
+```powershell
+# Example: Windows x86_64
+Invoke-WebRequest https://github.com/LumoAuth/cli/releases/latest/download/lumo_Windows_x86_64.zip -OutFile lumo.zip
+Expand-Archive lumo.zip -DestinationPath "$env:LOCALAPPDATA\Programs\lumo"
+# then add that directory to your PATH
+```
+
+A hand-placed binary is still upgradable with `lumo upgrade`, which downloads
+and verifies the next release the same way.
+
+### `go install`
+
+**Prerequisites:** Go 1.22+. Builds from source for whatever platform you are
+on, including ones without a published archive (for example Windows arm64).
+
+```bash
+go install github.com/lumoauth/cli@latest          # latest release
+go install github.com/lumoauth/cli@v1.1.0          # a specific version
+```
+
+The binary lands in `$(go env GOPATH)/bin` as `cli` because the module root
+is the main package; rename or alias it to `lumo`:
+
+```bash
+mv "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/lumo"
+```
+
+Note `lumo --version` reports `dev` for `go install` builds: the version,
+commit and date are injected only by the release pipeline.
+
+### Build from source
 
 ```bash
 git clone https://github.com/LumoAuth/cli.git && cd cli
@@ -93,6 +177,24 @@ go build -o lumo .
 # Optional: install into $GOPATH/bin
 go install .
 ```
+
+### Shell completions
+
+Homebrew installs completions automatically. For every other channel generate
+them from the binary:
+
+```bash
+# bash
+lumo completion bash | sudo tee /etc/bash_completion.d/lumo > /dev/null
+# zsh
+lumo completion zsh > "${fpath[1]}/_lumo"
+# fish
+lumo completion fish > ~/.config/fish/completions/lumo.fish
+# PowerShell
+lumo completion powershell | Out-String | Invoke-Expression
+```
+
+`lumo completion --help` has the full per-shell instructions.
 
 ### Upgrading
 
