@@ -47,9 +47,9 @@ box. Choose a framework with --framework; .env is pre-filled with the org slug
 and base URL from your current credentials (run 'lumo login' first), or pass
 --org to override. Pass --client-id to pre-fill the OAuth client ID as well.
 
-Until the SDK packages are published, pass --sdk-path (or set LUMO_SDK_PATH)
-pointing at a LumoAuth source checkout: the starter is then wired to install
-the SDK from those local sources rather than npm / PyPI / the Go proxy.
+The SDK installs from its public registry (npm / PyPI / the Go proxy). When
+working on the SDK itself, pass --sdk-path (or set LUMO_SDK_PATH) pointing at
+a LumoAuth source checkout and the starter installs from those local sources.
 
 Available starters:
   next      Next.js 14 (App Router) + @lumoauth/nextjs

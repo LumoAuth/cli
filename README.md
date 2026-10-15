@@ -532,12 +532,12 @@ lumo init --framework go
 
 Generates a minimal-but-working project wired to your org. `.env` files are pre-filled with the org slug and base URL from your current credentials, plus the OAuth client ID when `--client-id` is given.
 
-Until the SDK packages are published, pass `--sdk-path` (or set `LUMO_SDK_PATH`) pointing at a LumoAuth source checkout (the directory containing `sdk-js`, `sdk-python`, `sdk-go`); the starter then installs the SDK from those local sources.
+The SDK installs from its public registry (npm, PyPI or the Go proxy). When working on the SDK itself, pass `--sdk-path` (or set `LUMO_SDK_PATH`) pointing at a LumoAuth source checkout (the directory containing `sdk-js`, `sdk-python`, `sdk-go`) and the starter installs from those local sources instead.
 
 | Framework | What you get |
 |---|---|
 | `next` | Next.js 14 (App Router) + `@lumoauth/nextjs`, with `<SignIn />` and `<UserButton />` wired up. |
-| `express` | Express + `@lumoauth/sdk/express` middleware, session cookie, `requireAuth` example. |
+| `express` | Express + `@lumoauth/express` middleware, session cookie, `requireAuth` example. |
 | `fastapi` | FastAPI + `lumoauth.fastapi` router, `get_current_user` dependency. |
 | `go` | Go (chi) + `lumo-auth-go` middleware, session-cookie protected routes. |
 

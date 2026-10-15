@@ -10,25 +10,30 @@ npm install
 npm run dev
 ```
 
-Then visit http://localhost:3000 and sign in.
+Then visit http://localhost:3000 and click **Sign in**.
 
 ## What's wired
 
 - `app/layout.tsx` — wraps everything in `<LumoAuthProvider>` from `@lumoauth/nextjs`.
-- `app/page.tsx` — gates the page on `useLumoAuth().isAuthenticated`, renders
-  `<SignIn />` when not authenticated and `<UserButton />` when signed in.
-- `app/auth/callback/page.tsx` — OAuth code-exchange page that mounts the
-  `<AuthCallback />` component from `@lumoauth/nextjs` (PKCE flow handled
-  client-side; redirects to `/` after sign-in).
-- `.env.local` — base URL + org slug pre-filled from your `lumo login` session.
+- `app/page.tsx` — reads `useAuth()`: renders `<SignIn />` while `isSignedIn`
+  is false, and the user's name plus `<UserButton />` once they are signed in.
+- `app/auth/callback/page.tsx` — mounts `<AuthCallback />` from
+  `@lumoauth/nextjs`, which finishes the PKCE code exchange client-side and
+  redirects to `/`.
+- `.env.local` — base URL and organization slug pre-filled from your
+  `lumo login` session, plus the OAuth client ID.
 
-## Configure your OAuth client
+## OAuth client
 
-You still need a real OAuth client on the LumoAuth side. From the dashboard:
-**Developers → OAuth Clients → New** with redirect URI
-`http://localhost:3000/auth/callback` and grant types
-`authorization_code,refresh_token`. Then update `.env.local`:
+`NEXT_PUBLIC_LUMOAUTH_CLIENT_ID` in `.env.local` must be a public (PKCE)
+client that allows the redirect URI `http://localhost:3000/auth/callback` and
+the browser origin `http://localhost:3000`.
 
-```
-NEXT_PUBLIC_LUMOAUTH_CLIENT_ID=...the client id from the dashboard...
-```
+Every organization comes with a **Starter App** client that already allows
+both. Its ID is in the portal under **Get started → Quickstarts → Next.js**
+(the page shows a ready-to-run `lumo init` command), or run `lumo apps list`.
+
+To use a client of your own, create it in the portal under **Applications →
+New application** as a **Single-page or mobile app** with that redirect URI,
+then add the origin under **Browser CORS origins** on its **Configuration**
+tab and paste the client ID into `.env.local`.
