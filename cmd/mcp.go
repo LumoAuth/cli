@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lumoauth/cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -48,19 +50,27 @@ var mcpServersListCmd = &cobra.Command{
 
 		var result struct {
 			Data []struct {
-				ServerID    string   `json:"server_id"`
-				Name        string   `json:"name"`
-				ResourceURI string   `json:"resource_uri"`
-				Scopes      []string `json:"scopes_supported"`
+				ServerID            string   `json:"server_id"`
+				Name                string   `json:"name"`
+				ResourceURI         string   `json:"resource_uri"`
+				Transport           string   `json:"transport"`
+				TransportDeprecated bool     `json:"transport_deprecated"`
+				Scopes              []string `json:"scopes_supported"`
+				BasicScopes         []string `json:"basic_scopes"`
 			} `json:"data"`
 		}
 		json.Unmarshal(resp, &result)
 
 		rows := make([][]string, len(result.Data))
 		for i, s := range result.Data {
-			rows[i] = []string{s.ServerID, s.Name, truncate(s.ResourceURI, 40), truncate(strings.Join(s.Scopes, ","), 30)}
+			transport := s.Transport
+			if s.TransportDeprecated {
+				// HTTP+SSE is deprecated in MCP 2026-07-28.
+				transport += " (deprecated)"
+			}
+			rows[i] = []string{s.ServerID, s.Name, truncate(s.ResourceURI, 40), transport, truncate(strings.Join(s.Scopes, ","), 30), truncate(strings.Join(s.BasicScopes, ","), 20)}
 		}
-		p.PrintTable([]string{"Server ID", "Name", "Resource URI", "Scopes"}, rows)
+		p.PrintTable([]string{"Server ID", "Name", "Resource URI", "Transport", "Scopes", "Basic scopes"}, rows)
 		return nil
 	},
 }
@@ -100,9 +110,12 @@ var mcpTestCmd = &cobra.Command{
 	Short: "End-to-end test: mint a token + call the MCP server",
 	Long: `Closes the MCP authorization loop in one command:
 
-  1. Mint a short-lived bearer for <agent-id> scoped to the MCP server.
+  1. Mint a short-lived bearer for <agent-id>, audience-bound to the MCP
+     server's resource URI (RFC 8707), so a compliant server accepts it.
   2. POST a default tools/list JSON-RPC request to the MCP server's
-     endpoint URL with Authorization: Bearer.
+     endpoint URL with Authorization: Bearer, in the stateless MCP
+     2026-07-28 shape (MCP-Protocol-Version and Mcp-Method headers,
+     protocol version and client capabilities in _meta; no handshake).
   3. Print the status code, response body, and a verification hint.
 
 Use --method to override the JSON-RPC method (default: tools/list).
@@ -130,6 +143,7 @@ the MCP server advertises.`,
 		var server struct {
 			Data struct {
 				ServerID    string   `json:"server_id"`
+				ResourceURI string   `json:"resource_uri"`
 				EndpointURL string   `json:"endpoint_url"`
 				Scopes      []string `json:"scopes_supported"`
 			} `json:"data"`
@@ -150,9 +164,13 @@ the MCP server advertises.`,
 		if ttl <= 0 {
 			ttl = 300
 		}
-		mintBody := map[string]interface{}{"ttl_seconds": ttl}
+		// Field names follow the admin API: expiresIn, scopes, resource.
+		mintBody := map[string]interface{}{"expiresIn": ttl}
 		if scope != "" {
-			mintBody["scope"] = scope
+			mintBody["scopes"] = []string{scope}
+		}
+		if server.Data.ResourceURI != "" {
+			mintBody["resource"] = server.Data.ResourceURI
 		}
 		tokenResp, err := c.Post(fmt.Sprintf("/agents/%s/token", url.PathEscape(agentID)), mintBody)
 		if err != nil {
@@ -160,10 +178,10 @@ the MCP server advertises.`,
 		}
 		var token struct {
 			Data struct {
-				AccessToken string `json:"access_token"`
-				TokenType   string `json:"token_type"`
-				ExpiresIn   int    `json:"expires_in"`
-				Scope       string `json:"scope"`
+				AccessToken string   `json:"accessToken"`
+				TokenType   string   `json:"tokenType"`
+				ExpiresIn   int      `json:"expiresIn"`
+				Scopes      []string `json:"scopes"`
 			} `json:"data"`
 		}
 		if err := json.Unmarshal(tokenResp, &token); err != nil {
@@ -178,13 +196,22 @@ the MCP server advertises.`,
 		if method == "" {
 			method = "tools/list"
 		}
-		params := json.RawMessage(`{}`)
+		params := map[string]interface{}{}
 		if v, _ := cmd.Flags().GetString("params"); v != "" {
-			if !json.Valid([]byte(v)) {
+			if err := json.Unmarshal([]byte(v), &params); err != nil {
 				return fmt.Errorf("--params must be a valid JSON object: %s", v)
 			}
-			params = json.RawMessage(v)
 		}
+		// MCP 2026-07-28 is stateless: every request carries its protocol
+		// version and client capabilities in _meta (no initialize handshake).
+		meta, _ := params["_meta"].(map[string]interface{})
+		if meta == nil {
+			meta = map[string]interface{}{}
+		}
+		meta["io.modelcontextprotocol/protocolVersion"] = mcpProtocolVersion
+		meta["io.modelcontextprotocol/clientCapabilities"] = map[string]interface{}{}
+		meta["io.modelcontextprotocol/clientInfo"] = map[string]interface{}{"name": "lumo-cli", "version": Version}
+		params["_meta"] = meta
 		rpc := map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      1,
@@ -199,9 +226,16 @@ the MCP server advertises.`,
 		}
 		req.Header.Set("Authorization", "Bearer "+token.Data.AccessToken)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json")
+		// Streamable HTTP (MCP 2026-07-28): both media types, plus the
+		// request metadata headers mirrored from the body.
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("MCP-Protocol-Version", mcpProtocolVersion)
+		req.Header.Set("Mcp-Method", method)
+		if name := mcpNameHeader(method, params); name != "" {
+			req.Header.Set("Mcp-Name", name)
+		}
 
-		hc := &http.Client{Timeout: 30 * time.Second}
+		hc := client.NewHTTPClient(cfg.Insecure, 30*time.Second)
 		fmt.Fprintf(os.Stderr, "→ POST %s (scope=%s, ttl=%ds)\n", server.Data.EndpointURL, scope, ttl)
 		resp2, err := hc.Do(req)
 		if err != nil {
@@ -241,6 +275,38 @@ func init() {
 	mcpTestCmd.Flags().String("method", "tools/list", "JSON-RPC method to call")
 	mcpTestCmd.Flags().String("params", "", "JSON-RPC params as a JSON object (default: {})")
 
-	mcpCmd.AddCommand(mcpServersListCmd, mcpDiscoveryCmd, mcpTestCmd)
+	mcpCmd.AddCommand(mcpServersListCmd, mcpDiscoveryCmd, mcpTestCmd, mcpCheckToolCmd)
 	rootCmd.AddCommand(mcpCmd)
+}
+
+// mcpProtocolVersion is the MCP revision `lumo mcp test` speaks.
+const mcpProtocolVersion = "2026-07-28"
+
+// mcpNameHeader returns the Mcp-Name header for methods that require it
+// (tools/call, prompts/get: params.name; resources/read: params.uri), using
+// the Base64 sentinel form for values that are not plain header-safe ASCII.
+func mcpNameHeader(method string, params map[string]interface{}) string {
+	var v string
+	switch method {
+	case "tools/call", "prompts/get":
+		v, _ = params["name"].(string)
+	case "resources/read":
+		v, _ = params["uri"].(string)
+	default:
+		return ""
+	}
+	if v == "" {
+		return ""
+	}
+	safe := strings.TrimSpace(v) == v
+	for _, r := range v {
+		if r < 0x20 || r > 0x7e {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return v
+	}
+	return "=?base64?" + base64.StdEncoding.EncodeToString([]byte(v)) + "?="
 }

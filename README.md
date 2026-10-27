@@ -643,8 +643,28 @@ lumo agents delete <id>
 lumo agents enable <id>
 lumo agents disable <id>
 lumo agents rotate-credentials <id>
-lumo agents token <id> [--ttl 3600]    # mint a test bearer token
+lumo agents token <id> [--ttl 3600] [--scopes a,b] [--resource https://mcp.example.com/mcp]   # mint a test bearer token
 ```
+
+### MCP servers
+
+```bash
+lumo mcp servers                       # list registered MCP servers (transport, scopes, basic scopes)
+lumo mcp discovery <server-id>         # print the server's protected resource metadata
+lumo mcp test <server-id> <agent-id>   # mint an agent token for the server and call it
+lumo mcp check-tool <server-id> <tool> --subject agent:<agent-id> --client-id <server-client>
+```
+
+`mcp test` mints a token whose audience is the server's Resource URI and sends one
+stateless MCP 2026-07-28 request (`tools/list` by default). It sets the
+`MCP-Protocol-Version` and `Mcp-Method` headers and puts the protocol version in
+`_meta`. A server that requires DPoP cannot be tested this way.
+
+`mcp check-tool` makes the same per-tool check as an MCP server. First it gets a
+client-credentials token for the server's own client with the scope `mcp:authorize`.
+Then it asks LumoAuth about the subject. The secret comes from `--client-secret` or
+`LUMO_MCP_CLIENT_SECRET`. The command exits with status 0 when the call is allowed and
+1 when it is denied.
 
 ### Permissions
 
@@ -834,6 +854,7 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 | `social create/delete` | `admin:social:write` |
 | `dev start/list/stop` | `admin:settings:read` (list), `admin:settings:write` (start/stop) |
 | `mcp servers/discovery/test` | `admin:agents:read`, `admin:agents:write` (test mints a token) |
+| `mcp check-tool` | None: it uses the MCP server's own client credentials (`mcp:authorize`) |
 | `doctor` | any scope that can read the organization (`admin`, `admin:settings:read`) |
 
 ---

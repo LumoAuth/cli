@@ -268,9 +268,16 @@ var agentsTokenCmd = &cobra.Command{
 		}
 		p := getPrinter()
 
+		// Field names follow the admin API: expiresIn, scopes, resource.
 		body := map[string]interface{}{}
 		if v, _ := cmd.Flags().GetInt("ttl"); v > 0 {
-			body["ttl"] = v
+			body["expiresIn"] = v
+		}
+		if v, _ := cmd.Flags().GetStringSlice("scopes"); len(v) > 0 {
+			body["scopes"] = v
+		}
+		if v, _ := cmd.Flags().GetString("resource"); v != "" {
+			body["resource"] = v
 		}
 
 		resp, err := c.Post(fmt.Sprintf("/agents/%s/token", args[0]), body)
@@ -295,7 +302,9 @@ func init() {
 	agentsUpdateCmd.Flags().String("description", "", "Agent description")
 	agentsUpdateCmd.Flags().StringSlice("capabilities", nil, "Agent capabilities")
 
-	agentsTokenCmd.Flags().Int("ttl", 0, "Token TTL in seconds")
+	agentsTokenCmd.Flags().Int("ttl", 0, "Token TTL in seconds (default 3600, at most 30 days)")
+	agentsTokenCmd.Flags().StringSlice("scopes", nil, "Narrow the token to these agent capabilities")
+	agentsTokenCmd.Flags().String("resource", "", "Bind the token to a registered MCP server (its Resource URI); the LumoAuth API then refuses the token")
 
 	agentsCmd.AddCommand(
 		agentsListCmd, agentsGetCmd, agentsCreateCmd, agentsUpdateCmd,
