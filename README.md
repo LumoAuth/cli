@@ -637,14 +637,18 @@ lumo apps rotate-secret <id>
 ```bash
 lumo agents list [--search "assistant"]
 lumo agents get <agent-id>
-lumo agents create --name "My Agent" [--type ai_assistant] [--capabilities read_data,write_data]
-lumo agents update <id> [--name "Updated Agent"]
+lumo agents create --name "My Agent" [--type api_key] [--capabilities read_data,write_data] [--key-expires-in-days 90]
+lumo agents update <id> [--name "Updated Agent"] [--key-expires-in-days 90]
 lumo agents delete <id>
 lumo agents enable <id>
 lumo agents disable <id>
-lumo agents rotate-credentials <id>
+lumo agents rotate-credentials <id> [--key-expires-in-days 90 | --key-expires-at 2027-03-31 | --key-never-expires]
 lumo agents token <id> [--ttl 3600] [--scopes a,b] [--resource https://mcp.example.com/mcp]   # mint a test bearer token
 ```
+
+`--type` is the identity type: `api_key` (the default), `client_secret`, `workload`, `aauth`, `private_key_jwt` or `custom`.
+
+The API key's lifetime takes one of three flags: `--key-expires-in-days` (1 to 3650; 180 is recommended), `--key-expires-at` (a date, which lasts to the end of that day in UTC, or an RFC 3339 time) or `--key-never-expires`. On `create` it sets the new agent's key, and without a flag the key expires after 180 days. On `update` it changes the current key's lifetime. On `rotate-credentials` it sets the new key's lifetime; without a flag, the new key keeps the current expiry date, or gets 180 days when that date has passed.
 
 ### MCP servers
 

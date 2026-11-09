@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -106,7 +108,12 @@ var agentsCreateCmd = &cobra.Command{
 
 		body := map[string]interface{}{"name": name}
 		if v, _ := cmd.Flags().GetString("type"); v != "" {
-			body["type"] = v
+			// The admin API reads `identityType`; `type` was silently ignored,
+			// so every agent came out as an API key agent.
+			body["identityType"] = v
+		}
+		if err := addKeyLifetime(cmd, body); err != nil {
+			return err
 		}
 		if v, _ := cmd.Flags().GetString("description"); v != "" {
 			body["description"] = v
@@ -149,6 +156,9 @@ var agentsUpdateCmd = &cobra.Command{
 		}
 		if v, _ := cmd.Flags().GetStringSlice("capabilities"); len(v) > 0 {
 			body["capabilities"] = v
+		}
+		if err := addKeyLifetime(cmd, body); err != nil {
+			return err
 		}
 		if len(body) == 0 {
 			return fmt.Errorf("no fields to update")
@@ -240,14 +250,30 @@ var agentsDisableCmd = &cobra.Command{
 var agentsRotateCredsCmd = &cobra.Command{
 	Use:   "rotate-credentials <agent-id>",
 	Short: "Rotate agent API credentials",
-	Args:  cobra.ExactArgs(1),
+	Long: `Issue a new API key or client secret for an agent. The current one stops
+working at once; the new one is printed once.
+
+For an API key agent, choose the new key's lifetime with --key-expires-in-days,
+--key-expires-at or --key-never-expires. Without one, the new key keeps the
+current expiry date, or gets 180 days when that date has already passed.`,
+	Example: `  lumo agents rotate-credentials agt_3f9a51c07be24d18 --key-expires-in-days 90
+  lumo agents rotate-credentials agt_3f9a51c07be24d18 --key-expires-at 2027-03-31`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		body := map[string]interface{}{}
+		if err := addKeyLifetime(cmd, body); err != nil {
+			return err
+		}
 		c, err := getClient()
 		if err != nil {
 			return err
 		}
 		p := getPrinter()
-		resp, err := c.Post(fmt.Sprintf("/agents/%s/rotate-credentials", args[0]), nil)
+		var payload interface{}
+		if len(body) > 0 {
+			payload = body
+		}
+		resp, err := c.Post(fmt.Sprintf("/agents/%s/rotate-credentials", args[0]), payload)
 		if err != nil {
 			return err
 		}
@@ -289,18 +315,80 @@ var agentsTokenCmd = &cobra.Command{
 	},
 }
 
+// Flags for the lifetime of an agent's API key, shared by create, update
+// and rotate-credentials. They map to the admin API fields
+// apiKeyExpiresInDays / apiKeyExpiresAt (null = never expires).
+const (
+	flagKeyExpiresInDays = "key-expires-in-days"
+	flagKeyExpiresAt     = "key-expires-at"
+	flagKeyNeverExpires  = "key-never-expires"
+)
+
+func addKeyLifetimeFlags(cmd *cobra.Command, what string) {
+	cmd.Flags().Int(flagKeyExpiresInDays, 0, "Days until "+what+" expires, 1-3650 (180 is recommended)")
+	cmd.Flags().String(flagKeyExpiresAt, "", "When "+what+" expires: a date (YYYY-MM-DD, end of that day UTC) or an RFC 3339 time")
+	cmd.Flags().Bool(flagKeyNeverExpires, false, "Make "+what+" never expire (valid until revoked or rotated)")
+	cmd.MarkFlagsMutuallyExclusive(flagKeyExpiresInDays, flagKeyExpiresAt, flagKeyNeverExpires)
+}
+
+// addKeyLifetime copies the chosen API key lifetime into an admin API body.
+// It leaves the body alone when no lifetime flag was given.
+func addKeyLifetime(cmd *cobra.Command, body map[string]interface{}) error {
+	f := cmd.Flags()
+	switch {
+	case f.Changed(flagKeyExpiresInDays):
+		days, _ := f.GetInt(flagKeyExpiresInDays)
+		if days < 1 || days > 3650 {
+			return fmt.Errorf("--%s must be between 1 and 3650 (use --%s for no expiry)", flagKeyExpiresInDays, flagKeyNeverExpires)
+		}
+		body["apiKeyExpiresInDays"] = days
+	case f.Changed(flagKeyExpiresAt):
+		raw, _ := f.GetString(flagKeyExpiresAt)
+		at, err := parseKeyExpiry(raw)
+		if err != nil {
+			return err
+		}
+		if !at.After(time.Now()) {
+			return fmt.Errorf("--%s must be in the future", flagKeyExpiresAt)
+		}
+		body["apiKeyExpiresAt"] = at.UTC().Format(time.RFC3339)
+	case f.Changed(flagKeyNeverExpires):
+		if never, _ := f.GetBool(flagKeyNeverExpires); never {
+			body["apiKeyExpiresInDays"] = nil
+		}
+	}
+	return nil
+}
+
+// parseKeyExpiry accepts a date (the key works until the end of that day,
+// UTC) or a full RFC 3339 time.
+func parseKeyExpiry(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if d, err := time.Parse("2006-01-02", raw); err == nil {
+		return d.Add(24*time.Hour - time.Second), nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t, nil
+	}
+	return time.Time{}, fmt.Errorf("--%s must be a date (2027-03-31) or an RFC 3339 time (2027-03-31T12:00:00Z), got %q", flagKeyExpiresAt, raw)
+}
+
 func init() {
 	agentsListCmd.Flags().String("search", "", "Search by name")
 
 	agentsCreateCmd.Flags().String("name", "", "Agent name (required)")
-	agentsCreateCmd.Flags().String("type", "", "Agent type")
+	agentsCreateCmd.Flags().String("type", "", "Identity type: api_key (default), client_secret, workload, aauth, private_key_jwt or custom")
 	agentsCreateCmd.Flags().String("description", "", "Agent description")
 	agentsCreateCmd.Flags().StringSlice("capabilities", nil, "Agent capabilities")
 	agentsCreateCmd.Flags().Bool("act-on-behalf", false, "Allow acting on behalf of users")
+	addKeyLifetimeFlags(agentsCreateCmd, "the API key")
 
 	agentsUpdateCmd.Flags().String("name", "", "Agent name")
 	agentsUpdateCmd.Flags().String("description", "", "Agent description")
 	agentsUpdateCmd.Flags().StringSlice("capabilities", nil, "Agent capabilities")
+	addKeyLifetimeFlags(agentsUpdateCmd, "the current API key")
+
+	addKeyLifetimeFlags(agentsRotateCredsCmd, "the new API key")
 
 	agentsTokenCmd.Flags().Int("ttl", 0, "Token TTL in seconds (default 3600, at most 30 days)")
 	agentsTokenCmd.Flags().StringSlice("scopes", nil, "Narrow the token to these agent capabilities")
