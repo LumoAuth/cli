@@ -61,9 +61,10 @@ var logsListCmd = &cobra.Command{
 		var result struct {
 			Data []struct {
 				ID        interface{} `json:"id"`
-				Action    string      `json:"action"`
+				EventType string      `json:"eventType"`
 				Status    string      `json:"status"`
-				UserEmail string      `json:"userEmail"`
+				ActorName string      `json:"actorName"`
+				ActorID   string      `json:"actorId"`
 				IP        string      `json:"ipAddress"`
 				CreatedAt string      `json:"createdAt"`
 			} `json:"data"`
@@ -77,16 +78,20 @@ var logsListCmd = &cobra.Command{
 
 		rows := make([][]string, len(result.Data))
 		for i, l := range result.Data {
+			actor := l.ActorName
+			if actor == "" {
+				actor = l.ActorID
+			}
 			rows[i] = []string{
 				fmt.Sprintf("%v", l.ID),
-				l.Action,
+				l.EventType,
 				l.Status,
-				l.UserEmail,
+				actor,
 				l.IP,
 				l.CreatedAt,
 			}
 		}
-		p.PrintTable([]string{"ID", "Action", "Status", "User", "IP", "Time"}, rows)
+		p.PrintTable([]string{"ID", "Event", "Status", "Actor", "IP", "Time"}, rows)
 		p.PrintPagination(result.Meta.Total, result.Meta.Page, result.Meta.TotalPages)
 		return nil
 	},
@@ -171,10 +176,10 @@ var logsExportCmd = &cobra.Command{
 
 func init() {
 	logsListCmd.Flags().String("action", "", "Filter by action type (e.g., login, user.created)")
-	logsListCmd.Flags().String("user", "", "Filter by user ID or email")
+	logsListCmd.Flags().String("user", "", "Filter by the user ID of the actor")
 	logsListCmd.Flags().String("from", "", "Start date (ISO 8601)")
 	logsListCmd.Flags().String("to", "", "End date (ISO 8601)")
-	logsListCmd.Flags().String("status", "", "Filter by status (success, failure)")
+	logsListCmd.Flags().String("status", "", "Filter by result: success, failure, pending or partial")
 	logsListCmd.Flags().Int("page", 1, "Page number")
 	logsListCmd.Flags().Int("limit", 25, "Results per page")
 

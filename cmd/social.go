@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -82,16 +83,20 @@ var socialCreateCmd = &cobra.Command{
 		if provider == "" || clientID == "" || clientSecret == "" {
 			return fmt.Errorf("--provider, --client-id, --client-secret are required")
 		}
+		displayName, _ := cmd.Flags().GetString("name")
+		if displayName == "" {
+			displayName = defaultProviderDisplayName(provider)
+		}
+		enable, _ := cmd.Flags().GetBool("enable")
 		body := map[string]interface{}{
 			"provider":     provider,
 			"clientId":     clientID,
 			"clientSecret": clientSecret,
-		}
-		if v, _ := cmd.Flags().GetString("name"); v != "" {
-			body["name"] = v
+			"displayName":  displayName, // required by the API
+			"enabled":      enable,
 		}
 		if v, _ := cmd.Flags().GetStringSlice("scopes"); len(v) > 0 {
-			body["scopes"] = v
+			body["requestedScopes"] = v
 		}
 		resp, err := c.Post("/social-providers", body)
 		if err != nil {
@@ -101,9 +106,23 @@ var socialCreateCmd = &cobra.Command{
 			p.PrintResult(json.RawMessage(resp))
 			return nil
 		}
-		p.PrintSuccess(fmt.Sprintf("Social provider '%s' created", provider))
+		if enable {
+			p.PrintSuccess(fmt.Sprintf("Social provider '%s' created and enabled", provider))
+		} else {
+			p.PrintSuccess(fmt.Sprintf("Social provider '%s' created (disabled; pass --enable to show it on the sign-in page)", provider))
+		}
 		return nil
 	},
+}
+
+// defaultProviderDisplayName turns a provider type such as "google" or
+// "microsoft-entra" into a display name ("Google", "Microsoft Entra").
+func defaultProviderDisplayName(provider string) string {
+	words := strings.FieldsFunc(provider, func(r rune) bool { return r == '-' || r == '_' || r == ' ' })
+	for i, w := range words {
+		words[i] = strings.ToUpper(w[:1]) + w[1:]
+	}
+	return strings.Join(words, " ")
 }
 
 var socialDeleteCmd = &cobra.Command{
@@ -133,8 +152,9 @@ func init() {
 	socialCreateCmd.Flags().String("provider", "", "Provider type: google, github, etc. (required)")
 	socialCreateCmd.Flags().String("client-id", "", "OAuth client ID (required)")
 	socialCreateCmd.Flags().String("client-secret", "", "OAuth client secret (required)")
-	socialCreateCmd.Flags().String("name", "", "Display name")
-	socialCreateCmd.Flags().StringSlice("scopes", nil, "OAuth scopes")
+	socialCreateCmd.Flags().String("name", "", "Display name on the sign-in page (default: the provider type, capitalised)")
+	socialCreateCmd.Flags().StringSlice("scopes", nil, "Scopes to request from the provider (default: openid,profile,email)")
+	socialCreateCmd.Flags().Bool("enable", false, "Enable the provider at once (it is created disabled otherwise)")
 
 	socialCmd.AddCommand(socialListCmd, socialGetCmd, socialCreateCmd, socialDeleteCmd)
 	rootCmd.AddCommand(socialCmd)

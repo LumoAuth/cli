@@ -31,8 +31,8 @@ var (
 	}
 	RegionCustom = Region{
 		ID:          "custom",
-		Label:       "Other / Self-hosted",
-		Description: "Enter a custom server URL (e.g. local dev instance)",
+		Label:       "Other server",
+		Description: "Enter a server URL (for example a local development server)",
 		ServerURL:   "",
 	}
 )

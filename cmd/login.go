@@ -173,8 +173,8 @@ func maskSecret(v string) string {
 func runLogin(cmd *cobra.Command, args []string) error {
 	// Resolve the deployment URL. Mirrors the mobile app's region selector
 	// (US / EU / Custom) when the user hasn't pinned a URL via --base-url,
-	// LUMO_BASE_URL, or ~/.lumoauth/config.yaml. Custom covers self-hosted
-	// and local-dev instances.
+	// LUMO_BASE_URL, or ~/.lumoauth/config.yaml. Custom covers any other
+	// server URL, such as a local development server.
 	baseURL, err := resolveLoginBaseURL()
 	if err != nil {
 		return err

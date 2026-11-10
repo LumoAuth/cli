@@ -26,15 +26,22 @@ type Printer struct {
 	quiet  bool
 }
 
-// NewPrinter creates a new output printer.
+// NewPrinter creates a new output printer. An empty format (or "auto")
+// means: a table on a terminal, JSON when stdout is piped or redirected.
+// Any other value is used as given, so `-o table` stays a table in a pipe.
 func NewPrinter(format string, quiet bool) *Printer {
-	f := Format(strings.ToLower(format))
+	return newPrinter(format, quiet, isTerminal())
+}
 
-	// Auto-detect: if not a TTY, default to JSON for piping
-	if f == FormatTable && !isTerminal() {
-		f = FormatJSON
+func newPrinter(format string, quiet, terminal bool) *Printer {
+	f := Format(strings.ToLower(strings.TrimSpace(format)))
+	if f == "" || f == "auto" {
+		if terminal {
+			f = FormatTable
+		} else {
+			f = FormatJSON
+		}
 	}
-
 	return &Printer{format: f, quiet: quiet}
 }
 

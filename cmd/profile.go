@@ -30,7 +30,7 @@ var profileCmd = &cobra.Command{
 	Long: `Manage named credential profiles stored in ~/.lumoauth/credentials.yaml.
 
 Each profile holds its own org, base URL, and login tokens, so you can
-switch between organizations (or US/EU/self-hosted deployments) without
+switch between organizations (or the US and EU regions) without
 re-authenticating:
 
   lumo login --profile acme --org acme-corp

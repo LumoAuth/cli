@@ -119,7 +119,7 @@ var webhooksDeliveriesReplayCmd = &cobra.Command{
 }
 
 func init() {
-	webhooksDeliveriesListCmd.Flags().String("status", "", "Filter by status (pending|delivered|failed|dead_lettered)")
+	webhooksDeliveriesListCmd.Flags().String("status", "", "Filter by status (pending|success|failed|dead_lettered)")
 	webhooksDeliveriesListCmd.Flags().Int("limit", 0, "Limit number of rows")
 
 	webhooksDeliveriesCmd.AddCommand(

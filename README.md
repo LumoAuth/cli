@@ -99,6 +99,7 @@ Every command has the form `lumo <resource> <verb>`. Some common tasks:
 - **It keeps sessions short and narrow.** `lumo login` saves the session in a file that only you can read. Access tokens last one hour, and `lumo` refreshes them for you. Pass `--scope` to sign in with fewer permissions.
 - **It asks before it removes access.** Commands that remove a factor or unlink an identity ask for confirmation in a terminal. Scripts must pass `--yes`.
 - **Each error includes the fix.** An error comes with a hint, such as the exact `lumo login --scope …` command for a `403`. Each kind of error has its own [exit code](#use-lumo-from-a-coding-agent).
+- **Its output fits scripts.** When the output goes to a pipe or a file, `lumo` prints JSON instead of a table.
 - **Nothing is out of reach.** `lumo api` calls any Admin API endpoint, including endpoints that have no command yet.
 
 ## Install
@@ -353,7 +354,7 @@ Each profile keeps its own `org_id`, `base_url` and login tokens in `~/.lumoauth
 | 3 | Config file | `~/.lumoauth/config.yaml` |
 | 4 (fallback) | Active profile | `~/.lumoauth/credentials.yaml` (from `lumo login`) |
 
-The output format comes from `-o`, then `LUMO_OUTPUT_FORMAT`. Without either, `lumo` prints a table.
+The output format comes from `-o`, then `LUMO_OUTPUT_FORMAT`, then `format` in the config file. See [Output formats](#output-formats).
 
 `lumo` chooses the **credential** separately:
 
@@ -369,6 +370,7 @@ So `lumo` never sends a login token to another organization by mistake. `lumo wh
 # ~/.lumoauth/config.yaml: settings that you edit (no secrets)
 org_id: acme-corp
 base_url: https://app.lumoauth.dev   # or https://eu.app.lumoauth.dev
+format: table                        # table, json or yaml
 insecure: false
 ```
 
@@ -423,7 +425,7 @@ Every command has the form `lumo <resource> <verb>`. For the full list, run `lum
 --org string        Organization slug (overrides LUMO_ORG and the active profile; --org-id still accepted)
 --base-url string   Base URL (overrides LUMO_BASE_URL)
 --profile string    Named credentials profile (overrides LUMO_PROFILE and current_profile)
--o, --output string Output format: table, json, yaml (default: table)
+-o, --output string Output format: table, json, yaml (default: table in a terminal, json when piped)
 --insecure          Skip TLS verification (local dev only)
 -q, --quiet         Suppress non-essential output
 -v, --verbose       Enable verbose output
@@ -586,9 +588,11 @@ lumo mfa coverage -o json
 ```bash
 lumo social list
 lumo social get <id>
-lumo social create --provider google --client-id <id> --client-secret <secret> [--scopes email,profile]
+lumo social create --provider google --client-id <id> --client-secret <secret> [--name "Google"] [--scopes openid,profile,email] [--enable]
 lumo social delete <id>
 ```
+
+`social create` adds the provider in the disabled state. Pass `--enable` to show it on the sign-in page at once. Without `--name`, the display name is the provider type with a capital letter, such as `Google`. Without `--scopes`, LumoAuth asks the provider for `openid`, `profile` and `email`.
 
 ### People and access
 
@@ -660,6 +664,8 @@ lumo roles create --name "Editor" [--description "..."] [--permissions doc.edit,
 lumo roles update <id> [--name "New Name"] [--permissions p1,p2]
 lumo roles delete <id>
 ```
+
+`--permissions` replaces all the permissions of the role. LumoAuth keeps each permission that you cannot grant yourself. It skips a slug that does not exist or that you cannot grant, and `lumo` prints a warning for each skipped slug.
 
 #### Groups
 
@@ -766,25 +772,29 @@ Webhooks for other systems and the audit log of everything that happens in the o
 ```bash
 lumo webhooks list
 lumo webhooks get <id>
-lumo webhooks create --url https://example.com/hook --events user.created,user.login [--secret s3cr3t]
+lumo webhooks create --url https://example.com/hook --events user.created,user.login
 lumo webhooks update <id> [--url "..."] [--events e1,e2]
 lumo webhooks delete <id>
 
-lumo webhooks deliveries list <webhook-id> [--status pending|delivered|failed|dead_lettered] [--limit 50]
+lumo webhooks deliveries list <webhook-id> [--status pending|success|failed|dead_lettered] [--limit 50]
 lumo webhooks deliveries get <webhook-id> <delivery-id>
 lumo webhooks deliveries replay <webhook-id> <delivery-id>
 ```
+
+LumoAuth generates the signing secret of a new webhook. `webhooks create` prints it once, so store it at once to verify signatures.
 
 `deliveries list` shows each delivery with its status, the number of attempts and the time of the last attempt. `deliveries replay` sends a failed or dead-lettered delivery again.
 
 #### `logs` — Audit logs
 
 ```bash
-lumo logs list [--action login] [--user <user-id>] [--from 2025-01-01] [--to 2025-12-31] [--status success]
+lumo logs list [--action login] [--user <user-id>] [--from 2025-01-01] [--to 2025-12-31] [--status failure]
 lumo logs get <log-id>
 lumo logs stats [--from 2025-01-01] [--to 2025-12-31]
 lumo logs export [--export-format csv|json] [--from ...] [--to ...]
 ```
+
+`--status` is the result of the event: `success`, `failure`, `pending` or `partial`. `--user` takes the user ID of the actor.
 
 `logs export` prints the file to standard output. Redirect it to save it: `lumo logs export --export-format csv > audit.csv`.
 
@@ -823,13 +833,14 @@ For every route, see the [API reference](https://docs.lumoauth.dev/api-reference
 ## Output formats
 
 ```bash
-lumo users list                # table (the default)
+lumo users list                # a table in a terminal
 lumo users list -o json        # JSON
 lumo users list -o yaml        # YAML
-lumo users list -o json | jq '.data[].email'
+lumo users list | jq '.data[].email'    # JSON, because the output goes to a pipe
+lumo users list -o table | less        # -o table keeps the table in a pipe
 ```
 
-Pass `-o json` whenever another program reads the output. To use JSON for a whole shell session, set `LUMO_OUTPUT_FORMAT=json`.
+Without `-o`, `lumo` prints a table in a terminal and JSON when the output goes to a pipe or a file. `LUMO_OUTPUT_FORMAT` and `format` in the config file set another default. A default of `table` still gives JSON in a pipe; only `-o table` forces a table there.
 
 ## Use lumo from a coding agent
 
@@ -846,7 +857,7 @@ Pass `-o json` whenever another program reads the output. To use JSON for a whol
 
 | Feature | Details |
 |---------|---------|
-| JSON output | `-o json` on every command, or `LUMO_OUTPUT_FORMAT=json` for the whole session |
+| Automatic JSON | Output is JSON when it goes to a pipe or a file. Pass `-o json` to be explicit. |
 | Structured errors | In JSON mode, an error prints `{"error": true, "message", "hint", "status", "code", "details"}` on standard output. The `hint` gives the fix, such as the exact `lumo login --scope …` command. |
 | Exit codes | `0` success · `1` error · `2` sign-in or permission · `3` not found · `4` invalid input · `5` rate limited |
 | Quiet mode | `-q` leaves out decorative output |
@@ -893,7 +904,7 @@ echo "Sandbox $SLUG ready"
 | `LUMO_ORG` | Organization slug (`LUMO_ORG_ID` still accepted) | organization of the active profile |
 | `LUMO_BASE_URL` | LumoAuth server URL | `https://app.lumoauth.dev` (US) |
 | `LUMO_PROFILE` | Named credentials profile | `current_profile` from credentials.yaml |
-| `LUMO_OUTPUT_FORMAT` | Default output format | `table` |
+| `LUMO_OUTPUT_FORMAT` | Default output format (`table`, `json` or `yaml`) | table in a terminal, JSON in a pipe |
 | `LUMO_INSECURE` | Skip TLS verification (`true`/`1`) | `false` |
 | `LUMO_CONFIG_DIR` | Custom config folder | `~/.lumoauth` |
 | `LUMO_MCP_CLIENT_SECRET` | Client secret of the MCP server for `lumo mcp check-tool` | — |
@@ -949,7 +960,7 @@ LumoAuth checks scopes for each resource and refuses a call when a scope is miss
 
 **The browser does not open during `lumo login`.** Pass `--no-browser` and copy the verification URL by hand. The sign-in still works.
 
-**A script gets a table instead of JSON.** Pass `-o json`, or set `LUMO_OUTPUT_FORMAT=json`.
+**A script gets a table instead of JSON.** Look for `-o table` in the command. Only that flag keeps a table in a pipe.
 
 **`tls: failed to verify certificate` with a local development server.** Run `lumo login --insecure` once. `lumo` saves this choice in the profile, for that profile's server only. Later commands need no flag, and production URLs keep full TLS verification. When you enter a custom server URL at the region question, `lumo` turns off TLS verification by itself for localhost, `.local`, `http://` and private network addresses (`10.x`, `172.16–31.x`, `192.168.x`).
 

@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
+	"github.com/lumoauth/cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -125,6 +127,9 @@ var rolesCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if v, ok := body["permissions"].([]string); ok {
+			warnSkippedPermissions(p, v, resp)
+		}
 
 		if !p.IsTable() {
 			p.PrintResult(json.RawMessage(resp))
@@ -138,7 +143,13 @@ var rolesCreateCmd = &cobra.Command{
 var rolesUpdateCmd = &cobra.Command{
 	Use:   "update <role-id>",
 	Short: "Update a role",
-	Args:  cobra.ExactArgs(1),
+	Long: `Update the name, the description or the permissions of a role.
+
+--permissions replaces the permissions of the role with the slugs that you
+list. LumoAuth keeps any permission of the role that you cannot grant
+yourself, and it skips slugs that do not exist or that you cannot grant;
+lumo prints a warning for each skipped slug.`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {
@@ -153,16 +164,26 @@ var rolesUpdateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetString("description"); v != "" {
 			body["description"] = v
 		}
-		if v, _ := cmd.Flags().GetStringSlice("permissions"); len(v) > 0 {
-			body["permissions"] = v
-		}
-		if len(body) == 0 {
-			return fmt.Errorf("no fields to update")
+		perms, _ := cmd.Flags().GetStringSlice("permissions")
+		if len(body) == 0 && len(perms) == 0 {
+			return fmt.Errorf("no fields to update: pass --name, --description or --permissions")
 		}
 
-		resp, err := c.Patch(fmt.Sprintf("/roles/%s", args[0]), body)
-		if err != nil {
-			return err
+		var resp []byte
+		if len(body) > 0 {
+			// PATCH /roles/{id} changes name and description only; the server
+			// ignores a permissions field there.
+			resp, err = c.Patch(fmt.Sprintf("/roles/%s", url.PathEscape(args[0])), body)
+			if err != nil {
+				return err
+			}
+		}
+		if len(perms) > 0 {
+			resp, err = c.Put(fmt.Sprintf("/roles/%s/permissions", url.PathEscape(args[0])), map[string]interface{}{"permissions": perms})
+			if err != nil {
+				return err
+			}
+			warnSkippedPermissions(p, perms, resp)
 		}
 
 		if !p.IsTable() {
@@ -172,6 +193,40 @@ var rolesUpdateCmd = &cobra.Command{
 		p.PrintSuccess("Role updated")
 		return nil
 	},
+}
+
+// warnSkippedPermissions prints a note for each requested permission slug
+// that is missing from the role in resp. The server skips unknown slugs and
+// permissions that the caller cannot grant without an error.
+func warnSkippedPermissions(p *output.Printer, requested []string, resp []byte) {
+	for _, slug := range skippedPermissions(requested, resp) {
+		p.PrintNote(fmt.Sprintf("! Permission %q was not assigned: it does not exist, or you cannot grant it.", slug))
+	}
+}
+
+func skippedPermissions(requested []string, resp []byte) []string {
+	var out struct {
+		Data struct {
+			Permissions *[]struct {
+				Slug string `json:"slug"`
+			} `json:"permissions"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(resp, &out) != nil || out.Data.Permissions == nil {
+		return nil // response without a permission list: nothing to compare
+	}
+	have := map[string]bool{}
+	for _, perm := range *out.Data.Permissions {
+		have[perm.Slug] = true
+	}
+	var skipped []string
+	for _, slug := range requested {
+		slug = strings.TrimSpace(slug)
+		if slug != "" && !have[slug] {
+			skipped = append(skipped, slug)
+		}
+	}
+	return skipped
 }
 
 var rolesDeleteCmd = &cobra.Command{

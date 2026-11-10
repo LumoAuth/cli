@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/lumoauth/cli/internal/client"
 	"github.com/lumoauth/cli/internal/config"
@@ -140,7 +141,7 @@ func init() {
 	_ = pf.MarkHidden("org-id")
 	pf.StringVar(&flagBaseURL, "base-url", "", "Base URL (overrides LUMO_BASE_URL)")
 	pf.StringVar(&flagProfile, "profile", "", "Named credentials profile (overrides LUMO_PROFILE and current_profile)")
-	pf.StringVarP(&flagFormat, "output", "o", "", "Output format: table, json, yaml (default: table; json when piped)")
+	pf.StringVarP(&flagFormat, "output", "o", "", "Output format: table, json, yaml (default: table in a terminal, json when piped)")
 	pf.BoolVar(&flagInsecure, "insecure", false, "Skip TLS certificate verification (local dev only)")
 	pf.BoolVarP(&flagQuiet, "quiet", "q", false, "Suppress non-essential output")
 	pf.BoolVarP(&flagVerbose, "verbose", "v", false, "Enable verbose output")
@@ -174,11 +175,33 @@ func getClient() (*client.Client, error) {
 
 // getPrinter returns an output printer for the current format settings.
 func getPrinter() *output.Printer {
-	format := flagFormat
-	if format == "" {
-		if v := os.Getenv("LUMO_OUTPUT_FORMAT"); v != "" {
-			format = v
+	fileFormat := ""
+	if flagFormat == "" && os.Getenv("LUMO_OUTPUT_FORMAT") == "" {
+		if fc, _ := config.LoadFromFile(); fc != nil {
+			fileFormat = fc.Format
 		}
 	}
-	return output.NewPrinter(format, flagQuiet)
+	return output.NewPrinter(resolveOutputFormat(flagFormat, os.Getenv("LUMO_OUTPUT_FORMAT"), fileFormat), flagQuiet)
+}
+
+// resolveOutputFormat picks the output format: the -o flag, then
+// LUMO_OUTPUT_FORMAT, then `format` in config.yaml. Only the flag can force
+// a table into a pipe: "table" from the environment or the config file (which
+// `lumo config init` writes) is the default, so it still becomes JSON when
+// stdout is not a terminal. An empty result means "auto".
+func resolveOutputFormat(flag, env, file string) string {
+	if f := strings.TrimSpace(flag); f != "" {
+		return f
+	}
+	for _, v := range []string{env, file} {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if strings.EqualFold(v, "table") {
+			return ""
+		}
+		return v
+	}
+	return ""
 }

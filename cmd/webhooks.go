@@ -98,15 +98,11 @@ var webhooksCreateCmd = &cobra.Command{
 			return fmt.Errorf("--events is required")
 		}
 
+		// LumoAuth generates the signing secret and stores no description, so
+		// --secret and --description are deprecated and not sent.
 		body := map[string]interface{}{
 			"url":    webhookURL,
 			"events": events,
-		}
-		if v, _ := cmd.Flags().GetString("description"); v != "" {
-			body["description"] = v
-		}
-		if v, _ := cmd.Flags().GetString("secret"); v != "" {
-			body["secret"] = v
 		}
 
 		resp, err := c.Post("/webhooks", body)
@@ -117,7 +113,20 @@ var webhooksCreateCmd = &cobra.Command{
 			p.PrintResult(json.RawMessage(resp))
 			return nil
 		}
-		p.PrintSuccess("Webhook created")
+		// The create response is the only place where the signing secret
+		// appears, so a table must show it too.
+		var created struct {
+			Data struct {
+				ID     interface{} `json:"id"`
+				Secret string      `json:"secret"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(resp, &created)
+		p.PrintSuccess(fmt.Sprintf("Webhook %v created", created.Data.ID))
+		if created.Data.Secret != "" {
+			fmt.Printf("Signing secret: %s\n", created.Data.Secret)
+			p.PrintNote("Store the signing secret now to verify webhook signatures. LumoAuth does not show it again.")
+		}
 		return nil
 	},
 }
@@ -140,11 +149,8 @@ var webhooksUpdateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetStringSlice("events"); len(v) > 0 {
 			body["events"] = v
 		}
-		if v, _ := cmd.Flags().GetString("description"); v != "" {
-			body["description"] = v
-		}
 		if len(body) == 0 {
-			return fmt.Errorf("no fields to update")
+			return fmt.Errorf("no fields to update: pass --url or --events")
 		}
 
 		resp, err := c.Patch(fmt.Sprintf("/webhooks/%s", args[0]), body)
@@ -190,10 +196,13 @@ func init() {
 	webhooksCreateCmd.Flags().StringSlice("events", nil, "Event types to subscribe to (required)")
 	webhooksCreateCmd.Flags().String("description", "", "Webhook description")
 	webhooksCreateCmd.Flags().String("secret", "", "Webhook signing secret")
+	_ = webhooksCreateCmd.Flags().MarkDeprecated("description", "the API does not store a webhook description; the flag is ignored")
+	_ = webhooksCreateCmd.Flags().MarkDeprecated("secret", "LumoAuth generates the signing secret and prints it once; the flag is ignored")
 
 	webhooksUpdateCmd.Flags().String("url", "", "Webhook URL")
 	webhooksUpdateCmd.Flags().StringSlice("events", nil, "Event types")
 	webhooksUpdateCmd.Flags().String("description", "", "Webhook description")
+	_ = webhooksUpdateCmd.Flags().MarkDeprecated("description", "the API does not store a webhook description; the flag is ignored")
 
 	webhooksCmd.AddCommand(webhooksListCmd, webhooksGetCmd, webhooksCreateCmd, webhooksUpdateCmd, webhooksDeleteCmd)
 	rootCmd.AddCommand(webhooksCmd)

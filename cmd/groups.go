@@ -267,16 +267,28 @@ var groupsMembersRemoveCmd = &cobra.Command{
 			return fmt.Errorf("--users is required")
 		}
 
-		resp, err := c.Delete(fmt.Sprintf("/groups/%s/members", args[0]))
-		if err != nil {
-			return err
+		// The API removes one member per call: DELETE /groups/{id}/members/{user},
+		// where {user} is a user ID or an email address.
+		removed := make([]string, 0, len(users))
+		for _, u := range users {
+			u = strings.TrimSpace(u)
+			if u == "" {
+				continue
+			}
+			if _, err := c.Delete(fmt.Sprintf("/groups/%s/members/%s", url.PathEscape(args[0]), url.PathEscape(u))); err != nil {
+				if len(removed) > 0 {
+					p.PrintNote(fmt.Sprintf("Removed before the error: %s", strings.Join(removed, ", ")))
+				}
+				return fmt.Errorf("removing %s: %w", u, err)
+			}
+			removed = append(removed, u)
 		}
 
 		if !p.IsTable() {
-			p.PrintResult(json.RawMessage(resp))
+			p.PrintResult(map[string]interface{}{"status": "success", "removed": removed})
 			return nil
 		}
-		p.PrintSuccess(fmt.Sprintf("Removed %s from group", strings.Join(users, ", ")))
+		p.PrintSuccess(fmt.Sprintf("Removed %s from group", strings.Join(removed, ", ")))
 		return nil
 	},
 }
