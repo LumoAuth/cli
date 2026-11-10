@@ -1,49 +1,54 @@
 <div align="center">
 
-# lumo
+<a href="https://lumoauth.dev">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://docs.lumoauth.dev/img/lumoauth-logo-horizontal-reversed.svg">
+    <img src="https://docs.lumoauth.dev/img/lumoauth-logo-horizontal.svg" alt="LumoAuth" height="36">
+  </picture>
+</a>
 
-**The LumoAuth command line.**
-Users, roles, groups, OAuth apps, AI agents, webhooks, audit logs, MFA policy, sandboxes — all from your terminal, and all scriptable.
+# LumoAuth CLI
+
+**Run your LumoAuth organization from the terminal with `lumo`.**<br>
+Users, roles, OAuth apps, AI agents, MCP servers, webhooks, audit logs and MFA policy, with JSON output for scripts and coding agents.
 
 [![Release](https://img.shields.io/github/v/release/LumoAuth/cli?label=release&color=111)](https://github.com/LumoAuth/cli/releases/latest)
 [![Go](https://img.shields.io/github/go-mod/go-version/LumoAuth/cli?color=111)](go.mod)
-[![License](https://img.shields.io/github/license/LumoAuth/cli?color=111)](LICENSE)
-[![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-111)](#installation)
-[![Built with GoReleaser](https://img.shields.io/badge/built%20with-GoReleaser-111)](.goreleaser.yaml)
+[![Platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-111)](#install)
+[![License: MIT](https://img.shields.io/badge/license-MIT-111)](LICENSE)
 
-[Install](#installation) · [Quick start](#quick-start) · [Authentication](#authentication) · [Commands](#commands) · [AI agents](#ai-agent-integration) · [Troubleshooting](#troubleshooting)
+[Quick start](#quick-start) · [What you can do](#what-you-can-do) · [Install](#install) · [Sign in](#sign-in) · [Commands](#commands) · [Coding agents](#use-lumo-from-a-coding-agent) · [Docs](https://docs.lumoauth.dev/cli)
 
 </div>
 
 ---
 
+## Quick start
+
+**1. Install `lumo`:**
+
 ```bash
-brew install lumoauth/tap/lumo      # macOS / Linux
-scoop install lumo                  # Windows (after: scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket)
-winget install --id LumoAuth.lumo   # Windows
-curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh   # anywhere else
+brew install lumoauth/tap/lumo
 ```
 
+On Windows, or on a computer without Homebrew, see [Install](#install).
+
+**2. Sign in** to your organization:
+
+```bash
+lumo login --org acme-corp
+```
+
+Choose your region, United States or European Union. Then approve the sign-in in the browser window that opens.
+
+**3. Check the setup:**
+
 ```console
-$ lumo login --org acme-corp
-→ Starting login on https://app.lumoauth.dev for org acme-corp
-
-  ┌─ Open this URL in any browser to approve the login ─
-  │  https://app.lumoauth.dev/orgs/acme-corp/device
-  │  User code: WXYZ-1234
-  └─
-
-  (opened in your browser; or copy the URL above)
-Waiting for approval (Ctrl+C to cancel)...
-✓ Logged in to acme-corp. Credentials saved to profile "default" in ~/.lumoauth/credentials.yaml
-  Signed in as:   jane@acme.com
-  Next: lumo doctor
-
 $ lumo doctor
 ✓ profile       default (~/.lumoauth/credentials.yaml)
 ✓ organization  acme-corp
 ✓ server        https://app.lumoauth.dev
-✓ credential    jane@acme.com, login token, expires 2026-10-07T04:12:09Z
+✓ credential    jane@acme.com, login token, expires 2026-11-10T23:12:09Z
 ✓ scopes        openid profile email admin
 ✓ discovery     issuer https://app.lumoauth.dev/orgs/acme-corp
 ✓ admin api     GET /admin/organization succeeded
@@ -51,98 +56,63 @@ $ lumo doctor
 lumo 1.1.0
 ```
 
-Built for three audiences: **org admins** who want to get things done without the dashboard, **developers** wiring LumoAuth into an app, and **AI coding agents** that need predictable JSON, typed exit codes and errors that say how to fix themselves.
-
-## Highlights
-
-<table>
-<tr>
-<td width="33%" valign="top">
-
-**Sign in like a human**
-`lumo login` runs the OAuth device flow in your browser, stores a scoped token with mode 0600, and refreshes it silently. Narrow scopes with `--scope` for least-privilege sessions.
-
-</td>
-<td width="33%" valign="top">
-
-**Know it works before you start**
-`lumo doctor` checks profile, org, server, credential, scopes and a real Admin API call, and prints the fix for anything that fails. Exit 1 on failure, so it belongs in CI.
-
-</td>
-<td width="33%" valign="top">
-
-**Sandboxes on demand**
-`lumo dev start` spawns an isolated throwaway tenant with a TTL. Perfect for PR previews. `lumo dev stop` or the cleanup cron takes it away.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-**Webhooks to localhost**
-`lumo tunnel --to http://localhost:3000/hooks` replays live events to your dev server, like `stripe listen`. Filter by event type.
-
-</td>
-<td valign="top">
-
-**Scaffold a working app**
-`lumo init --framework next|express|fastapi|go` writes a minimal project already wired to your org, env files filled in.
-
-</td>
-<td valign="top">
-
-**Made for agents and scripts**
-Auto-JSON when piped, structured errors with a `hint`, typed exit codes, no prompts, and `lumo api` for any endpoint without a command.
-
-</td>
-</tr>
-</table>
-
-## Table of contents
-
-- [Quick start](#quick-start)
-- [Installation](#installation) — [Homebrew](#homebrew-macos--linux) · [Scoop](#scoop-windows) · [winget](#winget-windows) · [install script](#install-script-linux--macos--wsl) · [direct download](#direct-download) · [`go install`](#go-install) · [source](#build-from-source) · [completions](#shell-completions) · [upgrading](#upgrading)
-- [Authentication](#authentication) — [device flow](#a-device-flow-login-recommended-for-humans) · [API keys](#b-api-key-recommended-for-ci--scripting) · [profiles](#named-profiles-multi-org) · [precedence](#configuration-precedence)
-- [Commands](#commands)
-- [Output formats](#output-formats)
-- [AI agent integration](#ai-agent-integration)
-- [Environment variables](#environment-variables)
-- [API scopes](#api-scopes)
-- [Troubleshooting](#troubleshooting)
-- [Releasing](#releasing) · [Project structure](#project-structure) · [License](#license)
-
----
-
-## Quick start
+**4. Run a command:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
-lumo login --org acme-corp     # approve in the browser
-lumo doctor                    # ✓ credential, scopes, server, admin api
-lumo users list                # you're in
+lumo users list
 ```
 
-The installer drops the binary in `~/.local/bin`. `lumo login` opens your browser for the device-flow approval and stores a token with the `admin` scope in `~/.lumoauth/credentials.yaml` (mode 0600). `lumo doctor` proves it works before you run anything else.
+No organization yet? [Sign up at app.lumoauth.dev](https://app.lumoauth.dev/register). The slug that you choose there is the one that `lumo login --org` takes.
 
-For CI and scripts, skip the browser and use an [API key](#b-api-key-recommended-for-ci--scripting):
+In CI and scripts, use an [API key](#use-an-api-key-in-ci-and-scripts) instead of the browser:
 
 ```bash
 LUMO_API_KEY=lmk_… LUMO_ORG=acme-corp lumo users list -o json
 ```
 
----
+## What you can do
 
-## Installation
+Every command has the form `lumo <resource> <verb>`. Some common tasks:
 
-Every channel installs the same statically linked binary, and `lumo upgrade` later upgrades through whichever one you used.
+| To | Run |
+|---|---|
+| Find a user | `lumo users list --search jane` |
+| Let a user who lost their phone sign in and enroll a new factor | `lumo users tap jane@acme.com --reason "Lost phone; verified by video call"` |
+| Require MFA, with 14 days for people to enroll | `lumo mfa policy set --requirement required --grace-days 14` |
+| See how many people use each MFA factor | `lumo mfa coverage` |
+| Register an AI agent with a key that expires in 90 days | `lumo agents create --name "Support bot" --key-expires-in-days 90` |
+| Call an MCP server with an agent's token | `lumo mcp test <server-id> <agent-id>` |
+| Send live webhook events to your laptop | `lumo tunnel --to http://localhost:3000/webhooks` |
+| Send a failed webhook delivery again | `lumo webhooks deliveries replay <webhook-id> <delivery-id>` |
+| Start a throwaway organization for a pull request | `lumo dev start --name pr-1234 --ttl-hours 24` |
+| Start a Next.js app that signs in with your organization | `lumo init --framework next` |
+| Check an Auth0 export before you import it | `lumo migrate auth0 --file users.json --dry-run` |
+| Export the October audit log as CSV | `lumo logs export --export-format csv --from 2026-10-01 --to 2026-10-31` |
+| Call an Admin API endpoint that has no command | `lumo api GET /users --query search=jane` |
 
-| | Recommended | Also works |
-|---|---|---|
-| **macOS** | [Homebrew](#homebrew-macos--linux) | install script · direct download · `go install` |
-| **Linux** | [Homebrew](#homebrew-macos--linux) or the [install script](#install-script-linux--macos--wsl) | direct download · `go install` |
-| **Windows** | [Scoop](#scoop-windows) or [winget](#winget-windows) | direct download · `go install` · WSL + install script |
+> [!TIP]
+> Do you use a coding agent? Install the [`lumoauth-cli`](https://github.com/lumoauth/agent-skills/tree/main/skills/lumoauth-cli) skill with `npx skills add lumoauth/agent-skills --skill lumoauth-cli`. It teaches Claude Code, Cursor, Codex and other agents every `lumo` command, the JSON output and the exit codes.
 
-Builds ship for macOS (Apple silicon, Intel), Linux (x86_64, arm64, i386) and Windows (x86_64, i386). There is no Windows arm64 build; use `go install` there.
+## How `lumo` works with you
+
+- **It checks the setup before you start.** `lumo doctor` tests the profile, the organization, the server, the credential and its scopes, and one real Admin API call. It prints the fix for each check that fails and exits with status 1, so you can run it in CI.
+- **It keeps sessions short and narrow.** `lumo login` saves the session in a file that only you can read. Access tokens last one hour, and `lumo` refreshes them for you. Pass `--scope` to sign in with fewer permissions.
+- **It asks before it removes access.** Commands that remove a factor or unlink an identity ask for confirmation in a terminal. Scripts must pass `--yes`.
+- **Each error includes the fix.** An error comes with a hint, such as the exact `lumo login --scope …` command for a `403`. Each kind of error has its own [exit code](#use-lumo-from-a-coding-agent).
+- **Nothing is out of reach.** `lumo api` calls any Admin API endpoint, including endpoints that have no command yet.
+
+## Install
+
+| To | Run |
+|---|---|
+| Install on macOS or Linux with Homebrew | `brew install lumoauth/tap/lumo` |
+| Install on Windows with Scoop | `scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket`, then `scoop install lumo` |
+| Install on Windows with winget | `winget install --id LumoAuth.lumo` |
+| Install on Linux, macOS or WSL without a package manager | `curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh \| sh` |
+| Build with Go on any platform | `go install github.com/lumoauth/cli@latest` |
+| Upgrade an installed `lumo` | `lumo upgrade` |
+
+Each channel installs the same statically linked binary. Release archives exist for macOS (Apple silicon, Intel), Linux (x86_64, arm64, i386) and Windows (x86_64, i386). For Windows on Arm, use `go install`.
 
 ### Homebrew (macOS / Linux)
 
@@ -150,11 +120,7 @@ Builds ship for macOS (Apple silicon, Intel), Linux (x86_64, arm64, i386) and Wi
 brew install lumoauth/tap/lumo
 ```
 
-The tap is [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap) and `lumo` is published as a cask. On macOS the cask strips the Gatekeeper quarantine attribute for you, so the unsigned binary runs without a warning. Shell completions for bash, zsh and fish are installed alongside.
-
-```bash
-brew upgrade lumoauth/tap/lumo   # or just: lumo upgrade
-```
+The tap is [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap), and `lumo` is a cask. On macOS the cask removes the Gatekeeper quarantine attribute, so the unsigned binary runs without a warning. Homebrew also installs the shell completions for bash, zsh and fish. To upgrade, run `brew upgrade lumoauth/tap/lumo` or `lumo upgrade`.
 
 ### Scoop (Windows)
 
@@ -163,7 +129,7 @@ scoop bucket add lumoauth https://github.com/lumoauth/scoop-bucket
 scoop install lumo
 ```
 
-The bucket is [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket). Upgrade with `scoop update lumo` or `lumo upgrade`.
+The bucket is [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket). To upgrade, run `scoop update lumo` or `lumo upgrade`.
 
 ### winget (Windows)
 
@@ -171,30 +137,42 @@ The bucket is [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket
 winget install --id LumoAuth.lumo
 ```
 
-Each release is submitted to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs/pulls?q=LumoAuth.lumo) automatically and becomes installable once Microsoft merges it, usually within a few days. If `winget` cannot find the package yet, use Scoop or the direct download in the meantime. Upgrade with `winget upgrade --id LumoAuth.lumo` or `lumo upgrade`.
+Each release goes to [`microsoft/winget-pkgs`](https://github.com/microsoft/winget-pkgs/pulls?q=LumoAuth.lumo) as a pull request. You can install the release after Microsoft merges that pull request, usually within a few days. Until then, use Scoop or the direct download. To upgrade, run `winget upgrade --id LumoAuth.lumo` or `lumo upgrade`.
 
 ### Install script (Linux / macOS / WSL)
-
-No `sudo` required.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh
 ```
 
-The script detects your OS and architecture, downloads the latest release, verifies its SHA-256 against the release's `checksums.txt` (and refuses to install on a mismatch; `LUMO_SKIP_CHECKSUM=1` bypasses this, don't), installs `lumo` to `~/.local/bin`, and adds that directory to your shell's `PATH` for bash, zsh, fish or sh if needed. Restart your shell and run `lumo --version` to confirm.
+The script needs no `sudo`. It does these steps:
 
-On macOS a binary installed this way is quarantined by Gatekeeper because it is not notarized. Clear the attribute once, or prefer Homebrew:
+1. finds your operating system and architecture
+2. downloads the latest release
+3. compares its SHA-256 with the release's `checksums.txt`, and stops on a mismatch
+4. installs `lumo` in `~/.local/bin`
+5. adds that folder to `PATH` for bash, zsh, fish or sh, if it is missing
+
+Restart your shell, then run `lumo --version`. `LUMO_SKIP_CHECKSUM=1` turns off the checksum test. Do not use it.
+
+macOS quarantines a binary that you install this way, because the binary is not notarized. Remove the attribute once, or use Homebrew:
 
 ```bash
 xattr -d com.apple.quarantine ~/.local/bin/lumo
 ```
 
 <details>
-<summary><strong>Direct download</strong> — grab an archive from the releases page and verify it yourself</summary>
+<summary><b>Direct download</b>: get an archive from the releases page and verify it yourself</summary>
 
 <a name="direct-download"></a>
 
-Every release on the [releases page](https://github.com/LumoAuth/cli/releases/latest) ships an archive per platform plus `checksums.txt`. Archives are named `lumo_<OS>_<Arch>` with `OS` ∈ `Darwin`, `Linux`, `Windows` and `Arch` ∈ `x86_64`, `arm64`, `i386`; Windows archives are `.zip`, the rest `.tar.gz`.
+<br>
+
+Each release on the [releases page](https://github.com/LumoAuth/cli/releases/latest) has one archive per platform and a `checksums.txt` file. The archive names have the form `lumo_<OS>_<Arch>`:
+
+- `OS` is `Darwin`, `Linux` or `Windows`
+- `Arch` is `x86_64`, `arm64` or `i386`
+- Windows archives are `.zip` files, and the others are `.tar.gz` files
 
 ```bash
 # Example: Linux x86_64
@@ -210,39 +188,43 @@ install -m 0755 lumo ~/.local/bin/lumo
 # Example: Windows x86_64
 Invoke-WebRequest https://github.com/LumoAuth/cli/releases/latest/download/lumo_Windows_x86_64.zip -OutFile lumo.zip
 Expand-Archive lumo.zip -DestinationPath "$env:LOCALAPPDATA\Programs\lumo"
-# then add that directory to your PATH
+# then add that folder to your PATH
 ```
 
-A hand-placed binary is still upgradable with `lumo upgrade`, which downloads and verifies the next release the same way.
+`lumo upgrade` also works for a binary that you placed by hand. It downloads and verifies the next release in the same way.
 
 </details>
 
 <details>
-<summary><strong><code>go install</code></strong> — build from the module for any platform Go supports</summary>
+<summary><b><code>go install</code></b>: build from the module on any platform that Go supports</summary>
 
 <a name="go-install"></a>
 
-**Prerequisites:** Go 1.22+. Builds from source for whatever platform you are on, including ones without a published archive (for example Windows arm64).
+<br>
+
+You need Go 1.22 or later. Go builds `lumo` for your platform, including platforms without a release archive, such as Windows on Arm.
 
 ```bash
 go install github.com/lumoauth/cli@latest          # latest release
 go install github.com/lumoauth/cli@v1.1.0          # a specific version
 ```
 
-The binary lands in `$(go env GOPATH)/bin` as `cli`, because the module root is the main package. Rename or alias it:
+The module root is the main package, so the binary in `$(go env GOPATH)/bin` is named `cli`. Rename it:
 
 ```bash
 mv "$(go env GOPATH)/bin/cli" "$(go env GOPATH)/bin/lumo"
 ```
 
-`lumo --version` reports `dev` for `go install` builds: the version, commit and date are injected only by the release pipeline.
+`lumo --version` prints `dev` for a `go install` build. Only the release pipeline adds the version, the commit and the date.
 
 </details>
 
 <details>
-<summary><strong>Build from source</strong></summary>
+<summary><b>Build from source</b></summary>
 
 <a name="build-from-source"></a>
+
+<br>
 
 ```bash
 git clone https://github.com/LumoAuth/cli.git && cd cli
@@ -256,7 +238,7 @@ go install .
 
 ### Shell completions
 
-Homebrew installs completions automatically. For every other channel, generate them from the binary:
+Homebrew installs the completions for you. For the other channels, generate them with `lumo`:
 
 ```bash
 lumo completion bash | sudo tee /etc/bash_completion.d/lumo > /dev/null   # bash
@@ -265,128 +247,133 @@ lumo completion fish > ~/.config/fish/completions/lumo.fish               # fish
 lumo completion powershell | Out-String | Invoke-Expression               # PowerShell
 ```
 
-`lumo completion --help` has the full per-shell instructions.
+`lumo completion --help` has the full steps for each shell.
 
 ### Upgrading
 
 ```bash
-lumo upgrade            # detect install channel and upgrade in place
+lumo upgrade            # find the install channel and upgrade in place
 lumo upgrade --check    # only report whether a newer version exists
 lumo upgrade --exec     # upgrade without a confirmation prompt
 ```
 
-`lumo upgrade` detects how the binary was installed and uses the matching
-channel: Homebrew/Scoop/winget installs are upgraded through the package
-manager (so its state stays consistent), while manual installs
-(install.sh / hand-placed binaries) are self-updated — the release
-archive for your OS/arch is downloaded, verified against the release's
-`checksums.txt`, and swapped in atomically. On Windows, if the running
-`lumo.exe` can't be replaced while in use, the new version is staged as
-`lumo.exe.new` with printed instructions to finish the swap.
+`lumo upgrade` finds out how you installed `lumo` and upgrades through the same channel:
 
----
+- **Homebrew, Scoop or winget:** `lumo` runs the package manager, so the package manager's records stay correct.
+- **Install script or a binary that you placed by hand:** `lumo` downloads the release archive for your system, verifies it against `checksums.txt` and replaces the binary in one step.
 
-## Authentication
+On Windows, a running `lumo.exe` sometimes cannot be replaced. Then `lumo` saves the new version as `lumo.exe.new` and prints the steps to finish the upgrade.
 
-The CLI accepts auth in two ways. Pick whichever fits your context — both work everywhere.
+## Sign in
 
-### A. Device-flow login (recommended for humans)
+`lumo` accepts two kinds of credentials. Both work with every command.
+
+### Sign in with your browser
+
+Use this method on your own computer.
 
 ```bash
 lumo login --org acme-corp
 ```
 
-Behind the scenes:
+What happens:
 
-1. CLI calls `POST /orgs/{org}/api/v1/oauth/device_authorization` with the well-known first-party client `lumoauth-cli` and an explicit `scope` (default `openid profile email admin`).
-2. CLI prints a `user_code` and opens your browser to the verification URL.
-3. You approve in the dashboard.
-4. CLI polls the token endpoint and stores the tokens and granted scopes at `~/.lumoauth/credentials.yaml` (0600).
+1. `lumo` asks for your region: United States (`app.lumoauth.dev`) or European Union (`eu.app.lumoauth.dev`). Pass `--base-url` or set `LUMO_BASE_URL` to skip this question.
+2. `lumo` starts the OAuth device flow with `POST /orgs/{org}/api/v1/oauth/device_authorization`. It uses the first-party client `lumoauth-cli` and asks for the scopes `openid profile email admin`.
+3. `lumo` prints a user code and opens the verification page in your browser.
+4. You approve the sign-in in the portal.
+5. `lumo` saves the tokens and the granted scopes in `~/.lumoauth/credentials.yaml`, with file mode 0600.
 
-Subsequent commands use the stored bearer token automatically. Access tokens last an hour and are refreshed silently from the 30-day refresh token — also once more, transparently, when the server answers `401`.
+Later commands use the saved token. An access token lasts one hour. `lumo` gets a new one with the 30-day refresh token before it expires, and once more when the server returns `401`.
 
 ```bash
-lumo whoami    # profile, org, credential in use, scopes, expiry (-o json for scripts)
-lumo doctor    # verifies the credential against the server
-lumo logout    # clears the active profile's tokens
+lumo whoami    # profile, organization, credential, scopes and expiry (-o json for scripts)
+lumo doctor    # checks the credential against the server
+lumo logout    # removes the tokens of the active profile
 ```
 
-**Scopes.** `admin` is the blanket Admin API scope and is what every `lumo` resource command needs: the Admin API accepts an OAuth token only when it carries `admin` or `admin:<resource>:<read|write>` *and* the signed-in user holds `settings.manage`. For a least-privilege session request resource scopes instead:
+**Scopes.** Every resource command needs the `admin` scope or a resource scope such as `admin:users:read`. The Admin API accepts a login token only when the token has one of these scopes *and* the signed-in user has the `settings.manage` permission. For a session with fewer permissions, ask for resource scopes:
 
 ```bash
 lumo login --org acme-corp --scope openid,admin:users:read,admin:audit:read
 ```
 
-A command that needs more answers `403` naming the missing scope and the exact `lumo login --scope …` that fixes it.
+A command that needs another scope fails with `403`. The error names the missing scope and the `lumo login --scope …` command that adds it.
 
-The first time you log in to an organization, the server lazy-creates a `lumoauth-cli:<slug>` public OAuth client (device_code + refresh_token grants, no PKCE — the device flow already binds approval to the verified user code) allowing the default scopes. Administrators can narrow that list to force least-privilege sessions; requesting a scope it does not allow fails with `invalid_scope` and a hint.
+On your first sign-in to an organization, LumoAuth creates a public OAuth client named `lumoauth-cli:<slug>`. The client allows the device code and refresh token grants and the default scopes. The device flow already binds the approval to the user code, so the client does not use PKCE. An administrator can remove scopes from this client to require narrower sessions. A request for a scope that the client does not allow fails with `invalid_scope` and a hint.
 
-### B. API key (recommended for CI / scripting)
+### Use an API key in CI and scripts
 
 ```bash
 export LUMO_API_KEY=lmk_your_key_here
 export LUMO_ORG=acme-corp
-lumo users list
+lumo users list -o json
 ```
 
-API keys live at `https://<your-lumoauth>/orgs/<orgId>/portal/settings/api-keys`. They are checked **per resource**: a key with `admin:users:read` can list users and nothing else, `:read` never authorises a write, and the key stops working if its creator is deactivated or loses `settings.manage`. Create one key per job with only the scopes in the [API scopes](#api-scopes) table for the commands it runs.
+Create API keys in the portal at `https://app.lumoauth.dev/orgs/acme-corp/portal/settings/api-keys`. LumoAuth checks the scopes of a key for each resource:
+
+- A key with `admin:users:read` can list users and do nothing else.
+- A `:read` scope never allows a write.
+- The key stops working when its creator is deactivated or loses `settings.manage`.
+
+Create one key for each job. Give it only the [scopes](#api-scopes) that the job's commands need.
 
 ### Named profiles (multi-org)
 
-Work across multiple organizations or deployments (consultant with two
-clients, US + EU regions, prod + self-hosted) without re-authenticating:
+With profiles, you can work in several organizations or regions without signing in again. Examples are two customer organizations, or one organization in the US and one in the EU.
 
 ```bash
-lumo login --profile acme --org acme-corp        # first client
-lumo login --profile clientb --org clientb-corp  # second client
+lumo login --profile acme --org acme-corp        # first organization
+lumo login --profile clientb --org clientb-corp  # second organization
 
-lumo profile list                 # see all profiles (* marks the active one)
-lumo profile use acme             # switch the default
-lumo users list --profile clientb # one-off command against another profile
-LUMO_PROFILE=clientb lumo users list   # env-var selection (CI, direnv)
+lumo profile list                 # all profiles (* marks the active one)
+lumo profile use acme             # change the active profile
+lumo users list --profile clientb # run one command with another profile
+LUMO_PROFILE=clientb lumo users list   # choose the profile with an environment variable (CI, direnv)
 
-lumo profile show [name]          # inspect a profile (tokens masked)
-lumo profile create staging --org acme-staging      # token-less profile for API-key use
+lumo profile show [name]          # show a profile (tokens masked)
+lumo profile create staging --org acme-staging      # profile without tokens, for an API key
 lumo profile delete clientb       # remove a profile and its tokens
 ```
 
-Each profile stores its own `org_id`, `base_url`, and login tokens in
-`~/.lumoauth/credentials.yaml`. Profile selection precedence: `--profile`
-flag > `LUMO_PROFILE` env var > `current_profile` in the credentials file.
-The `--org` flag still overrides the profile's org for a single command.
+Each profile keeps its own `org_id`, `base_url` and login tokens in `~/.lumoauth/credentials.yaml`. The `--profile` flag comes first, then `LUMO_PROFILE`, then `current_profile` in the credentials file. The `--org` flag still overrides the organization of the profile for one command.
 
-Existing single-profile credential files are migrated automatically on
-first use: your old credentials become the `default` profile and the
-original file is preserved at `~/.lumoauth/credentials.yaml.bak`.
+`lumo` moves an older single-profile credentials file to the new format on first use. Your old credentials become the `default` profile, and `lumo` keeps the original file as `~/.lumoauth/credentials.yaml.bak`.
 
-`lumo logout` clears only the active profile; other profiles keep their
-sessions.
+`lumo logout` signs out of the active profile only. Other profiles stay signed in.
 
 ### Configuration precedence
 
-Settings (organization, base URL, output format) resolve flags > environment > config file > active profile:
+`lumo` takes the organization and the base URL from the first place that sets them:
 
-| Priority | Method | Example |
+| Priority | Source | Example |
 |----------|--------|---------|
-| 1 (highest) | CLI flags | `--org acme-corp --base-url https://eu.app.lumoauth.dev` |
+| 1 (highest) | Flags | `--org acme-corp --base-url https://eu.app.lumoauth.dev` |
 | 2 | Environment variables | `LUMO_ORG`, `LUMO_BASE_URL`, `LUMO_API_KEY` |
 | 3 | Config file | `~/.lumoauth/config.yaml` |
 | 4 (fallback) | Active profile | `~/.lumoauth/credentials.yaml` (from `lumo login`) |
 
-The **credential** is chosen separately: the active profile's login token wins whenever it targets the organization the command addresses (so a stale key for another org is never sent by accident); otherwise the API key is used; otherwise the command exits with code 2 and a hint. `lumo whoami` shows the outcome.
+The output format comes from `-o`, then `LUMO_OUTPUT_FORMAT`. Without either, `lumo` prints a table.
+
+`lumo` chooses the **credential** separately:
+
+1. the login token of the active profile, when that profile is for the organization that the command uses
+2. otherwise, the API key
+3. otherwise, the command stops with exit code 2 and a hint
+
+So `lumo` never sends a login token to another organization by mistake. `lumo whoami` shows which credential the next command uses.
 
 ### Config file format
 
 ```yaml
-# ~/.lumoauth/config.yaml — manual settings (no secrets)
+# ~/.lumoauth/config.yaml: settings that you edit (no secrets)
 org_id: acme-corp
 base_url: https://app.lumoauth.dev   # or https://eu.app.lumoauth.dev
-format: table
 insecure: false
 ```
 
 ```yaml
-# ~/.lumoauth/credentials.yaml — managed by `lumo login`/`logout`/`lumo profile` (0600)
+# ~/.lumoauth/credentials.yaml: written by lumo login, logout and profile (mode 0600)
 version: 2
 current_profile: acme
 profiles:
@@ -404,29 +391,30 @@ profiles:
     access_token: ...
 ```
 
-Manage settings via:
+Change the settings with these commands:
 
 ```bash
-lumo config init          # Interactive setup wizard
-lumo config show          # Display current configuration
+lumo config init          # answer questions to create the file
+lumo config show          # print the current configuration
 lumo config set org_id acme-corp
 ```
 
----
-
 ## Commands
 
-Everything is `lumo <resource> <verb>`. Run `lumo --help` or `lumo <resource> --help` for the authoritative list.
+Every command has the form `lumo <resource> <verb>`. For the full list, run `lumo --help` or `lumo <resource> --help`.
+
+[Session and setup](#session-and-setup) · [Developer loop](#developer-loop) · [Organization](#organization) · [People and access](#people-and-access) · [Apps and agents](#apps-and-agents) · [Events](#events) · [Migration](#migration) · [Raw API access](#raw-api-access)
 
 | Area | Commands |
 |---|---|
-| Session | [`login`](#login--logout--whoami) · `logout` · `whoami` · [`doctor`](#doctor) · [`profile`](#profile--named-credential-profiles) · [`upgrade`](#upgrade) · `config` |
-| Developer loop | [`dev`](#dev--ephemeral-sandbox-tenants) · [`tunnel`](#tunnel--forward-webhooks-to-localhost) · [`init`](#init--scaffold-a-starter-project) |
-| Organization | [`org`](#org--organization-profile-and-settings) · [`settings`](#settings) · [`mfa`](#mfa-policy-and-coverage) · [`social`](#social-login-providers) |
-| People & access | [`users`](#users) · [`identities`](#federated-identities-saml--ldap-relink) · [`roles`](#roles) · [`groups`](#groups) · [`permissions`](#permissions) |
-| Clients | [`apps`](#oauth-applications) · [`agents`](#ai-agents) · [`sessions` / `tokens`](#sessions--tokens) |
-| Events | [`webhooks`](#webhooks) · [`logs`](#audit-logs) |
-| Escape hatch | [`api`](#raw-api-access) |
+| Session and setup | [`login`](#login--logout--whoami) · `logout` · `whoami` · [`doctor`](#doctor) · [`profile`](#profile--named-credential-profiles) · [`config`](#config-file-format) · [`upgrade`](#upgrade) · [`completion`](#shell-completions) |
+| Developer loop | [`dev`](#dev--sandbox-organizations) · [`tunnel`](#tunnel--forward-webhooks-to-localhost) · [`init`](#init--create-a-starter-project) |
+| Organization | [`org`](#org--organization-profile-and-settings) · [`settings`](#settings) · [`mfa`](#mfa--mfa-policy-and-coverage) · [`social`](#social--social-login-providers) |
+| People and access | [`users`](#users) · [`identities`](#federated-identities-saml--ldap-relink) · [`roles`](#roles) · [`groups`](#groups) · [`permissions`](#permissions) |
+| Apps and agents | [`apps`](#apps--oauth-applications) · [`agents`](#agents--ai-agents) · [`mcp`](#mcp--mcp-servers) · [`sessions` / `tokens`](#sessions--tokens) |
+| Events | [`webhooks`](#webhooks) · [`logs`](#logs--audit-logs) |
+| Migration | [`migrate`](#migrate--import-from-auth0) |
+| Raw API access | [`api`](#api) |
 
 ### Global flags
 
@@ -435,67 +423,64 @@ Everything is `lumo <resource> <verb>`. Run `lumo --help` or `lumo <resource> --
 --org string        Organization slug (overrides LUMO_ORG and the active profile; --org-id still accepted)
 --base-url string   Base URL (overrides LUMO_BASE_URL)
 --profile string    Named credentials profile (overrides LUMO_PROFILE and current_profile)
--o, --output string Output format: table, json, yaml (default: table; json when piped)
+-o, --output string Output format: table, json, yaml (default: table)
 --insecure          Skip TLS verification (local dev only)
 -q, --quiet         Suppress non-essential output
 -v, --verbose       Enable verbose output
 ```
 
-### `login` / `logout` / `whoami`
+### Session and setup
+
+Sign in, check the setup, switch between organizations and keep `lumo` up to date.
+
+#### `login` / `logout` / `whoami`
 
 ```bash
-lumo login [--org acme-corp] [--scope openid,admin:users:read] [--profile name] [--no-browser] [--insecure]
+lumo login [--org acme-corp] [--base-url https://eu.app.lumoauth.dev] [--scope openid,admin:users:read] [--profile name] [--no-browser] [--insecure]
 lumo logout
 lumo whoami [-o json]
 ```
 
-`--scope` narrows the requested scopes (default `openid,profile,email,admin`). `--no-browser` prints the verification URL instead of opening a browser — useful in headless or remote environments. `--profile` logs in to (or creates) a named profile; `logout` clears only the active profile. `whoami` shows which credential the next command will send and, for a login token, its scopes.
+- `--scope` asks for fewer scopes. The default is `openid,profile,email,admin`.
+- `--no-browser` prints the verification URL and does not open a browser. Use it on a remote or headless machine.
+- `--profile` signs in to a named profile, and creates the profile if it is new.
+- `logout` signs out of the active profile only.
+- `whoami` shows the credential that the next command sends and, for a login token, its scopes.
 
-### `doctor`
-
-```bash
-lumo doctor            # ✓/✗ per check, with the fix for each failure
-lumo doctor -o json    # {"ok": bool, "checks": [...]} — exit 1 when a check fails
-```
-
-Checks the active profile, organization, server reachability (OIDC discovery), the credential and its scopes, and a real Admin API call. Run it after `lumo login`, after creating an API key, and in CI before the real work.
-
-### `org` — organization profile and settings
+#### `doctor`
 
 ```bash
-lumo org get
-lumo org update --name "ACME Corporation"
-lumo org update --set timezone=Europe/Berlin --set allow_root_admin_login=false
-lumo org update --set security.dpop_require_nonce=true
+lumo doctor            # ✓ or ✗ for each check, with the fix for each failure
+lumo doctor -o json    # {"ok": bool, "checks": [...]}, exit code 1 when a check fails
 ```
 
-Only the documented, non-security settings keys are writable; anything else is refused with the offending keys listed and nothing is saved. Dotted keys nest, and object-valued keys merge key by key.
+`lumo doctor` checks the active profile, the organization, the server (with OIDC discovery), the credential and its scopes, and one real Admin API call. Run it after `lumo login`, after you create an API key, and in CI before the real work.
 
-### `profile` — Named credential profiles
+#### `profile` — Named credential profiles
 
 ```bash
 lumo profile list                # all profiles; * marks the active one
-lumo profile use <name>          # set the current profile
+lumo profile use <name>          # set the active profile
 lumo profile show [name]         # profile details (tokens masked)
 lumo profile create <name> [--org slug] [--base-url url] [--use]
 lumo profile delete <name> [-f]
 ```
 
-See [Named profiles](#named-profiles-multi-org) for the full workflow.
+For the full workflow, see [Named profiles](#named-profiles-multi-org).
 
-### `upgrade`
+#### `upgrade`
 
 ```bash
 lumo upgrade [--check] [--exec]
 ```
 
-Channel-aware upgrade — see [Upgrading](#upgrading).
+`lumo upgrade` uses the channel that installed `lumo`. See [Upgrading](#upgrading).
 
-### `dev` — Ephemeral sandbox tenants
+### Developer loop
 
-Spawn throwaway tenants for branch previews, PR environments, or scratch experiments. Each sandbox is a separate, fully-isolated tenant with its own slug; the daily cleanup cron deletes any sandbox past its TTL (default 24h, max 7 days).
+Try a change in a throwaway organization, receive webhooks on your laptop and start a new app.
 
-Spawning is the **Developer sandboxes** add-on ($199/month, Business plan only, up to 10 live sandboxes per owner). Without it `dev start` answers `403 feature_not_in_plan` and the CLI prints the billing page where an organization admin can add it. `dev list` and `dev stop` keep working so existing sandboxes can always be torn down.
+#### `dev` — Sandbox organizations
 
 ```bash
 lumo dev start [--name pr-1234] [--ttl-hours 24]
@@ -503,25 +488,29 @@ lumo dev list
 lumo dev stop sandbox-pr-1234-7a3b21
 ```
 
-`lumo dev start` prints the sandbox slug. Use it like any other org by passing `--org` or by exporting `LUMO_ORG`. The sandbox can be destroyed early with `lumo dev stop`; only the sandbox's owner (the user who created it) can destroy it.
+A sandbox is a separate organization with its own slug. Use it for branch previews, pull request environments or experiments. Each sandbox has a time to live: 24 hours by default, 7 days at most. A daily cleanup job deletes each sandbox after its time to live ends.
 
-### `tunnel` — Forward webhooks to localhost
+`lumo dev start` prints the slug of the sandbox. Use the slug like any other organization: pass `--org`, or export `LUMO_ORG`. To delete a sandbox early, run `lumo dev stop`. Only its owner, the user who created it, can delete it.
+
+To start sandboxes, your organization needs the **Developer sandboxes** add-on ($199/month, Business plan only, up to 10 live sandboxes for each owner). Without the add-on, `dev start` fails with `403 feature_not_in_plan`, and `lumo` prints the billing page where an administrator can add it. `dev list` and `dev stop` work without the add-on, so you can always delete existing sandboxes.
+
+#### `tunnel` — Forward webhooks to localhost
 
 ```bash
 lumo tunnel --to http://localhost:3000/webhooks
 lumo tunnel --to http://localhost:8000/hooks --filter user.created --filter user.deleted
 ```
 
-Equivalent to `stripe listen --forward-to`. Behind the scenes:
+`lumo tunnel` works like `stripe listen --forward-to`:
 
-1. CLI asks the server to register a transient `tunnel://<session>` webhook subscribed to `*`.
-2. CLI opens an SSE stream of that webhook's deliveries.
-3. Each event is replayed as a POST to the `--to` URL with `X-LumoAuth-Event` and `X-LumoAuth-Delivery` headers.
-4. On Ctrl+C, the tunnel webhook is deleted server-side.
+1. `lumo` asks the server to register a temporary `tunnel://<session>` webhook for all events (`*`).
+2. `lumo` opens an SSE stream of the deliveries for that webhook.
+3. `lumo` sends each event as a POST to the `--to` URL, with the `X-LumoAuth-Event` and `X-LumoAuth-Delivery` headers.
+4. When you press Ctrl+C, the server deletes the tunnel webhook.
 
-The CLI auto-reconnects when the server's max-stream-duration expires.
+The server ends each stream after a maximum time, and `lumo` then connects again.
 
-### `init` — Scaffold a starter project
+#### `init` — Create a starter project
 
 ```bash
 lumo init --framework next [--dir ./my-app] [--org acme-corp] [--client-id lumo_...] [--sdk-path ~/src/lumoauth]
@@ -530,176 +519,35 @@ lumo init --framework fastapi
 lumo init --framework go
 ```
 
-Generates a minimal-but-working project wired to your org. `.env` files are pre-filled with the org slug and base URL from your current credentials, plus the OAuth client ID when `--client-id` is given.
-
-The SDK installs from its public registry (npm, PyPI or the Go proxy). When working on the SDK itself, pass `--sdk-path` (or set `LUMO_SDK_PATH`) pointing at a LumoAuth source checkout (the directory containing `sdk-js`, `sdk-python`, `sdk-go`) and the starter installs from those local sources instead.
+`lumo init` creates a small project that already works with your organization. Its `.env` file has the organization slug and the base URL from your current credentials. With `--client-id`, it also has the OAuth client ID.
 
 | Framework | What you get |
 |---|---|
-| `next` | Next.js 14 (App Router) + `@lumoauth/nextjs`, with `<SignIn />` and `<UserButton />` wired up. |
-| `express` | Express + `@lumoauth/express` middleware, session cookie, `requireAuth` example. |
-| `fastapi` | FastAPI + `lumoauth.fastapi` router, `get_current_user` dependency. |
-| `go` | Go (chi) + `lumo-auth-go` middleware, session-cookie protected routes. |
+| `next` | Next.js 14 (App Router) and `@lumoauth/nextjs`, with `<SignIn />` and `<UserButton />` in place |
+| `express` | Express and the `@lumoauth/express` middleware, with a session cookie and a `requireAuth` example |
+| `fastapi` | FastAPI and the `lumoauth.fastapi` router, with a `get_current_user` dependency |
+| `go` | Go (chi) and the `lumo-auth-go` middleware, with routes that need a session cookie |
 
-Existing files are left alone unless `--force` is passed.
+The project installs the SDK from its public registry: npm, PyPI or the Go proxy. To work on the SDK itself, pass `--sdk-path` or set `LUMO_SDK_PATH`. Point it at a LumoAuth source checkout, the folder that holds `sdk-js`, `sdk-python` and `sdk-go`. The project then installs the SDK from those local sources.
 
-### Users
+`lumo init` does not change existing files unless you pass `--force`.
 
-```bash
-lumo users list [--search "john"] [--role admin] [--blocked] [--page 1] [--limit 25]
-lumo users get <user-id-or-email>
-lumo users create --email user@example.com [--name "John Doe"] [--password pw] [--roles admin,editor]
-lumo users update <id> [--name "New Name"] [--email new@email.com]
-lumo users delete <id>
-lumo users block <id>
-lumo users unblock <id>
-lumo users set-password <id> --password "newpassword"
+### Organization
 
-lumo users authenticators list <user-id-or-email>          # ID, type, name, state, tier, default, last used + status
-lumo users authenticators remove <user-id> <authenticator-id> [--yes]   # e.g. totp:12 — a lost phone
-lumo users tap <user-id-or-email> --reason "Lost phone; verified by video call" [--ttl 60] [--multi-use] [--mfa-challenge <id>]
+The organization profile, its settings, the MFA policy and social login.
 
-lumo users roles get <user-id>
-lumo users roles set <user-id> --roles admin,editor
-lumo users groups get <user-id>
-lumo users groups set <user-id> --groups team-a,team-b
-```
-
-Admins can no longer switch MFA off for a user: `lumo users mfa-reset` is deprecated and fails without calling the server. For a locked-out user, issue a **temporary access code** with `lumo users tap` — it stands in for the second factor once (or until it expires with `--multi-use`), only lets the user sign in and enroll a new factor, and is printed exactly once. The reason is required, audited and shown to the user. When you are signed in with `lumo login`, the server also wants a fresh MFA check of your own: pass an approved `step_up` challenge id with `--mfa-challenge` (API keys are exempt). `lumo users authenticators remove` revokes a single factor (asks for confirmation on a terminal; scripts must pass `--yes`); if MFA is required, the user enrolls again at next sign-in.
-
-### Federated identities (SAML / LDAP relink)
+#### `org` — Organization profile and settings
 
 ```bash
-lumo users identities list <user-id-or-email>                     # SAML IdP + NameID, LDAP directory + DN, social links
-lumo users identities link <user> --saml-idp <idp-id> --name-id <nameid> [--mfa-challenge <id>]
-lumo users identities link <user> --ldap-config <id> [--dn "uid=jane,ou=people,dc=acme,dc=com"] [--ldap-only] [--mfa-challenge <id>]
-lumo users identities unlink <user> --type saml|ldap|social [--yes] [--mfa-challenge <id>]
-
-lumo identities legacy-saml [--idp <idp-id>]                      # users with a legacy bare-NameID SAML link
-lumo identities legacy-saml --idp <idp-id> --relink --dry-run     # preview
-lumo identities legacy-saml --idp <idp-id> --relink [--user <id> ...] --yes
+lumo org get
+lumo org update --name "ACME Corporation"
+lumo org update --set timezone=Europe/Berlin --set allow_root_admin_login=false
+lumo org update --set security.dpop_require_nonce=true
 ```
 
-A link decides which external identity signs in as the user, so linking or unlinking signs the user out everywhere, emails them, and is audited (`identity.link.created` / `identity.link.removed` / `identity.link.bulk_relinked`). You cannot change the links of an account that holds permissions you lack. Without `--dn` the server looks the directory entry up by the user's email, then username; `--ldap-only` also disables the local password. A 409 (`identity_conflict`) means another user already holds that identity or the user is linked to a different federated source (unlink it first). Users whose SAML link predates per-IdP binding are refused at SAML sign-in while the organization has more than one SAML IdP — `lumo identities legacy-saml` lists them with the IdP whose allowed email domains claim them; `--relink` rebinds them (all users those domains claim, or the given `--user` ids). With `lumo login` tokens pass an approved `step_up` challenge with `--mfa-challenge` (API keys are exempt).
+You can change only the documented settings keys that are not security-sensitive. For any other key, `lumo` lists the rejected keys and saves nothing. Dotted keys nest, and keys with object values merge one key at a time.
 
-### MFA policy and coverage
-
-```bash
-lumo mfa policy get
-lumo mfa policy set --requirement required --grace-days 14
-lumo mfa policy set --allowed-factors passkey,push,totp --min-tier-login 4 --min-tier-step-up 3
-lumo mfa policy set --trusted-device-days 30 --required-factors 1 \
-  --email-otp-counts=false --passwordless-passkey --block-voip
-lumo mfa policy set --data '{"sms_country_denylist":["XX"]}'   # fields without a flag
-lumo mfa coverage                # enrolled %, by factor type and tier, grace-period counts
-lumo mfa coverage -o json
-```
-
-`--requirement` is one of `off`, `optional`, `required`, `risk_based`; `--allowed-factors` takes `passkey,push,totp,sms_otp,email_otp`. `policy set` sends only the flags you pass (a partial update); tiers run from 1 (strongest, passkey) to 4 (basic, SMS/email).
-
-### Roles
-
-```bash
-lumo roles list
-lumo roles get <id-or-slug>
-lumo roles create --name "Editor" [--description "..."] [--permissions doc.edit,doc.view]
-lumo roles update <id> [--name "New Name"] [--permissions p1,p2]
-lumo roles delete <id>
-```
-
-### Groups
-
-```bash
-lumo groups list [--search "engineering"]
-lumo groups get <id-or-slug>
-lumo groups create --name "Engineering" [--description "..."]
-lumo groups update <id> [--name "New Name"]
-lumo groups delete <id>
-
-lumo groups members list <group-id>
-lumo groups members add <group-id> --users user1,user2
-lumo groups members remove <group-id> --users user1,user2
-```
-
-### OAuth applications
-
-```bash
-lumo apps list [--search "my-app"]
-lumo apps get <client-id>
-lumo apps create --name "My App" [--type web|spa|native|m2m] [--redirect-uris http://localhost:3000/callback]
-lumo apps update <id> [--name "Updated App"]
-lumo apps delete <id>
-lumo apps rotate-secret <id>
-```
-
-### AI agents
-
-```bash
-lumo agents list [--search "assistant"]
-lumo agents get <agent-id>
-lumo agents create --name "My Agent" [--type api_key] [--capabilities read_data,write_data] [--key-expires-in-days 90]
-lumo agents update <id> [--name "Updated Agent"] [--key-expires-in-days 90]
-lumo agents delete <id>
-lumo agents enable <id>
-lumo agents disable <id>
-lumo agents rotate-credentials <id> [--key-expires-in-days 90 | --key-expires-at 2027-03-31 | --key-never-expires]
-lumo agents token <id> [--ttl 3600] [--scopes a,b] [--resource https://mcp.example.com/mcp]   # mint a test bearer token
-```
-
-`--type` is the identity type: `api_key` (the default), `client_secret`, `workload`, `aauth`, `private_key_jwt` or `custom`.
-
-The API key's lifetime takes one of three flags: `--key-expires-in-days` (1 to 3650; 180 is recommended), `--key-expires-at` (a date, which lasts to the end of that day in UTC, or an RFC 3339 time) or `--key-never-expires`. On `create` it sets the new agent's key, and without a flag the key expires after 180 days. On `update` it changes the current key's lifetime. On `rotate-credentials` it sets the new key's lifetime; without a flag, the new key keeps the current expiry date, or gets 180 days when that date has passed.
-
-### MCP servers
-
-```bash
-lumo mcp servers                       # list registered MCP servers (transport, scopes, basic scopes)
-lumo mcp discovery <server-id>         # print the server's protected resource metadata
-lumo mcp test <server-id> <agent-id>   # mint an agent token for the server and call it
-lumo mcp check-tool <server-id> <tool> --subject agent:<agent-id> --client-id <server-client>
-```
-
-`mcp test` mints a token whose audience is the server's Resource URI and sends one
-stateless MCP 2026-07-28 request (`tools/list` by default). It sets the
-`MCP-Protocol-Version` and `Mcp-Method` headers and puts the protocol version in
-`_meta`. A server that requires DPoP cannot be tested this way.
-
-`mcp check-tool` makes the same per-tool check as an MCP server. First it gets a
-client-credentials token for the server's own client with the scope `mcp:authorize`.
-Then it asks LumoAuth about the subject. The secret comes from `--client-secret` or
-`LUMO_MCP_CLIENT_SECRET`. The command exits with status 0 when the call is allowed and
-1 when it is denied.
-
-### Permissions
-
-```bash
-lumo permissions list
-lumo permissions get <id-or-slug>
-lumo permissions create --slug "document.edit" [--name "Edit Documents"]
-lumo permissions update <id> [--name "New Name"]
-lumo permissions delete <id>
-```
-
-### Webhooks
-
-```bash
-lumo webhooks list
-lumo webhooks get <id>
-lumo webhooks create --url https://example.com/hook --events user.created,user.login [--secret s3cr3t]
-lumo webhooks update <id> [--url "..."] [--events e1,e2]
-lumo webhooks delete <id>
-```
-
-### Audit logs
-
-```bash
-lumo logs list [--action login] [--user <user-id>] [--from 2025-01-01] [--to 2025-12-31] [--status success]
-lumo logs get <log-id>
-lumo logs stats [--from 2025-01-01] [--to 2025-12-31]
-lumo logs export [--export-format csv|json] [--from ...] [--to ...]
-```
-
-### Settings
+#### Settings
 
 ```bash
 lumo settings get general
@@ -713,9 +561,192 @@ lumo settings update branding --set primary_color="#5865F2" --set logo_url="http
 lumo settings update scim --data '{"allow_user_deletion": false}'
 ```
 
-Areas: `general`, `authentication` (`auth`), `security`, `email`, `branding`, `scim`, `organization` (`org`, `tenant`). `--set key=value` is repeatable and dotted keys nest. The MFA requirement and factors are not an `auth` setting any more — use `lumo mfa policy set`.
+The areas are `general`, `authentication` (`auth`), `security`, `email`, `branding`, `scim` and `organization` (`org`, `tenant`). You can repeat `--set key=value`, and dotted keys nest. The MFA requirement and factors are no longer `auth` settings. Use `lumo mfa policy set`.
 
-### Sessions & tokens
+#### `mfa` — MFA policy and coverage
+
+```bash
+lumo mfa policy get
+lumo mfa policy set --requirement required --grace-days 14
+lumo mfa policy set --allowed-factors passkey,push,totp --min-tier-login 4 --min-tier-step-up 3
+lumo mfa policy set --trusted-device-days 30 --required-factors 1 \
+  --email-otp-counts=false --passwordless-passkey --block-voip
+lumo mfa policy set --data '{"sms_country_denylist":["XX"]}'   # fields without a flag
+lumo mfa coverage                # enrolled %, by factor type and tier, grace-period counts
+lumo mfa coverage -o json
+```
+
+- `--requirement` is `off`, `optional`, `required` or `risk_based`.
+- `--allowed-factors` takes `passkey,push,totp,sms_otp,email_otp`.
+- `policy set` sends only the flags that you pass, as a partial update.
+- Tiers go from 1 (strongest, passkey) to 4 (basic, SMS or email).
+
+#### `social` — Social login providers
+
+```bash
+lumo social list
+lumo social get <id>
+lumo social create --provider google --client-id <id> --client-secret <secret> [--scopes email,profile]
+lumo social delete <id>
+```
+
+### People and access
+
+Users, their sign-in factors and external identities, and the roles, groups and permissions that control access.
+
+#### Users
+
+```bash
+lumo users list [--search "john"] [--role admin] [--blocked] [--page 1] [--limit 25]
+lumo users get <user-id-or-email>
+lumo users create --email user@example.com [--name "John Doe"] [--password pw] [--roles admin,editor]
+lumo users update <id> [--name "New Name"] [--email new@email.com]
+lumo users delete <id>
+lumo users block <id>
+lumo users unblock <id>
+lumo users set-password <id> --password "newpassword"
+
+lumo users authenticators list <user-id-or-email>          # ID, type, name, state, tier, default, last used, status
+lumo users authenticators remove <user-id> <authenticator-id> [--yes]   # for example totp:12, a lost phone
+lumo users tap <user-id-or-email> --reason "Lost phone; verified by video call" [--ttl 60] [--multi-use] [--mfa-challenge <id>]
+
+lumo users roles get <user-id>
+lumo users roles set <user-id> --roles admin,editor
+lumo users groups get <user-id>
+lumo users groups set <user-id> --groups team-a,team-b
+```
+
+Administrators cannot turn MFA off for a user. `lumo users mfa-reset` is deprecated and fails without a call to the server.
+
+For a user who is locked out, issue a **temporary access code** with `lumo users tap`:
+
+- The code replaces the second factor once. With `--multi-use`, it works until it expires.
+- With the code, the user can only sign in and enroll a new factor.
+- `lumo` prints the code exactly once.
+- The reason is required. LumoAuth writes it to the audit log and shows it to the user.
+
+When you use a `lumo login` session, the server also asks for a new MFA check of your own. Pass the ID of an approved `step_up` challenge with `--mfa-challenge`. API keys do not need it.
+
+`lumo users authenticators remove` revokes one factor. In a terminal it asks for confirmation; scripts must pass `--yes`. If MFA is required, the user enrolls again at the next sign-in.
+
+#### Federated identities (SAML / LDAP relink)
+
+```bash
+lumo users identities list <user-id-or-email>                     # SAML IdP + NameID, LDAP directory + DN, social links
+lumo users identities link <user> --saml-idp <idp-id> --name-id <nameid> [--mfa-challenge <id>]
+lumo users identities link <user> --ldap-config <id> [--dn "uid=jane,ou=people,dc=acme,dc=com"] [--ldap-only] [--mfa-challenge <id>]
+lumo users identities unlink <user> --type saml|ldap|social [--yes] [--mfa-challenge <id>]
+
+lumo identities legacy-saml [--idp <idp-id>]                      # users with a legacy bare-NameID SAML link
+lumo identities legacy-saml --idp <idp-id> --relink --dry-run     # preview
+lumo identities legacy-saml --idp <idp-id> --relink [--user <id> ...] --yes
+```
+
+A link sets which external identity signs in as the user. So when you link or unlink an identity, LumoAuth signs the user out everywhere, sends them an email and writes an audit event (`identity.link.created`, `identity.link.removed` or `identity.link.bulk_relinked`). You cannot change the links of an account that has permissions that you do not have.
+
+- Without `--dn`, the server looks up the directory entry by the user's email, then by the username.
+- `--ldap-only` also turns off the local password.
+- A `409` (`identity_conflict`) means that another user already has that identity, or that the user has a link to another federated source. Unlink that source first.
+- With a `lumo login` session, pass an approved `step_up` challenge with `--mfa-challenge`. API keys do not need it.
+
+Some SAML links are older than the binding to one IdP. While the organization has more than one SAML IdP, LumoAuth refuses these users at SAML sign-in. `lumo identities legacy-saml` lists these users, each with the IdP whose allowed email domains match them. `--relink` binds them to that IdP: all the users that the domains match, or only the users that you name with `--user`.
+
+#### Roles
+
+```bash
+lumo roles list
+lumo roles get <id-or-slug>
+lumo roles create --name "Editor" [--description "..."] [--permissions doc.edit,doc.view]
+lumo roles update <id> [--name "New Name"] [--permissions p1,p2]
+lumo roles delete <id>
+```
+
+#### Groups
+
+```bash
+lumo groups list [--search "engineering"]
+lumo groups get <id-or-slug>
+lumo groups create --name "Engineering" [--description "..."]
+lumo groups update <id> [--name "New Name"]
+lumo groups delete <id>
+
+lumo groups members list <group-id>
+lumo groups members add <group-id> --users user1,user2
+lumo groups members remove <group-id> --users user1,user2
+```
+
+#### Permissions
+
+```bash
+lumo permissions list
+lumo permissions get <id-or-slug>
+lumo permissions create --slug "document.edit" [--name "Edit Documents"]
+lumo permissions update <id> [--name "New Name"]
+lumo permissions delete <id>
+```
+
+### Apps and agents
+
+OAuth applications, AI agents, MCP servers, and the sessions and tokens that they hold.
+
+#### `apps` — OAuth applications
+
+```bash
+lumo apps list [--search "my-app"]
+lumo apps get <client-id>
+lumo apps create --name "My App" [--type web|spa|native|m2m] [--redirect-uris http://localhost:3000/callback]
+lumo apps update <id> [--name "Updated App"]
+lumo apps delete <id>
+lumo apps rotate-secret <id>
+```
+
+#### `agents` — AI agents
+
+```bash
+lumo agents list [--search "assistant"]
+lumo agents get <agent-id>
+lumo agents create --name "My Agent" [--type api_key] [--capabilities read_data,write_data] [--key-expires-in-days 90]
+lumo agents update <id> [--name "Updated Agent"] [--key-expires-in-days 90]
+lumo agents delete <id>
+lumo agents enable <id>
+lumo agents disable <id>
+lumo agents rotate-credentials <id> [--key-expires-in-days 90 | --key-expires-at 2027-03-31 | --key-never-expires]
+lumo agents token <id> [--ttl 3600] [--scopes a,b] [--resource https://mcp.example.com/mcp]   # get a bearer token for a test
+```
+
+`--type` is the identity type: `api_key` (the default), `client_secret`, `workload`, `aauth`, `private_key_jwt` or `custom`.
+
+Set the lifetime of the agent's API key with one of three flags:
+
+- `--key-expires-in-days`: 1 to 3650 days; 180 is the recommended value
+- `--key-expires-at`: a date, which lasts to the end of that day in UTC, or an RFC 3339 time
+- `--key-never-expires`
+
+The effect of the flag depends on the command:
+
+- On `create`, it sets the lifetime of the new agent's key. Without a flag, the key expires after 180 days.
+- On `update`, it changes the lifetime of the current key.
+- On `rotate-credentials`, it sets the lifetime of the new key. Without a flag, the new key keeps the current expiry date. If that date is in the past, the new key gets 180 days.
+
+#### `mcp` — MCP servers
+
+```bash
+lumo mcp servers                       # list registered MCP servers (transport, scopes, basic scopes)
+lumo mcp discovery <server-id>         # print the server's protected resource metadata
+lumo mcp test <server-id> <agent-id>   # get an agent token for the server and call it
+lumo mcp check-tool <server-id> <tool> --subject agent:<agent-id> --client-id <server-client>
+```
+
+`mcp test` gets a token with the server's Resource URI as its audience. Then it sends one stateless MCP 2026-07-28 request, `tools/list` by default. The request has the `MCP-Protocol-Version` and `Mcp-Method` headers, and the protocol version in `_meta`. You cannot test a server that requires DPoP this way.
+
+`mcp check-tool` makes the same check for each tool call as an MCP server does:
+
+1. It gets a client credentials token for the server's own client, with the scope `mcp:authorize`.
+2. It asks LumoAuth whether the subject may call the tool.
+
+The client secret comes from `--client-secret` or `LUMO_MCP_CLIENT_SECRET`. The command exits with status 0 when LumoAuth allows the call, and with 1 when LumoAuth denies it.
+
+#### Sessions & tokens
 
 ```bash
 lumo sessions list [--user <user-id>]
@@ -726,18 +757,57 @@ lumo tokens list [--user <user-id>] [--client <client-id>]
 lumo tokens revoke <token-id>
 ```
 
-### Social login providers
+### Events
+
+Webhooks for other systems and the audit log of everything that happens in the organization.
+
+#### Webhooks
 
 ```bash
-lumo social list
-lumo social get <id>
-lumo social create --provider google --client-id <id> --client-secret <secret> [--scopes email,profile]
-lumo social delete <id>
+lumo webhooks list
+lumo webhooks get <id>
+lumo webhooks create --url https://example.com/hook --events user.created,user.login [--secret s3cr3t]
+lumo webhooks update <id> [--url "..."] [--events e1,e2]
+lumo webhooks delete <id>
+
+lumo webhooks deliveries list <webhook-id> [--status pending|delivered|failed|dead_lettered] [--limit 50]
+lumo webhooks deliveries get <webhook-id> <delivery-id>
+lumo webhooks deliveries replay <webhook-id> <delivery-id>
 ```
+
+`deliveries list` shows each delivery with its status, the number of attempts and the time of the last attempt. `deliveries replay` sends a failed or dead-lettered delivery again.
+
+#### `logs` — Audit logs
+
+```bash
+lumo logs list [--action login] [--user <user-id>] [--from 2025-01-01] [--to 2025-12-31] [--status success]
+lumo logs get <log-id>
+lumo logs stats [--from 2025-01-01] [--to 2025-12-31]
+lumo logs export [--export-format csv|json] [--from ...] [--to ...]
+```
+
+`logs export` prints the file to standard output. Redirect it to save it: `lumo logs export --export-format csv > audit.csv`.
+
+### Migration
+
+Move users from another identity provider.
+
+#### `migrate` — Import from Auth0
+
+```bash
+lumo migrate auth0 --file users.json --dry-run     # read and validate only
+lumo migrate auth0 --file users.json [--concurrent 4] [--limit 100]
+```
+
+`lumo migrate auth0` reads an Auth0 bulk user export and creates each user through the Admin API. It skips users whose email already exists, so you can run it again safely. `--concurrent` sets the number of parallel requests (1 to 16). `--limit` stops after that many users, for a migration in stages.
+
+`lumo` never copies Auth0 password hashes. Migrated users have no password, and they set one with your organization's first sign-in flow, such as a magic link or a password reset.
 
 ### Raw API access
 
-For endpoints not covered by named commands, or for use by AI agents. Paths are relative to the Admin API of the current organization; absolute API paths and URLs work too:
+#### `api`
+
+Use `lumo api` for endpoints that have no command, or from an AI agent. Paths are relative to the Admin API of the current organization. Absolute API paths and URLs also work:
 
 ```bash
 lumo api GET /users --query search=jane --query limit=5     # → /orgs/<org>/api/v1/admin/users?search=jane&limit=5
@@ -748,35 +818,40 @@ lumo api GET /api/v1/authz/check                                   # global API
 lumo api --raw GET /healthz                                        # relative to the base URL
 ```
 
-The full set of routes is documented at `/api/doc` on your LumoAuth instance (auto-generated OpenAPI 3 spec).
-
----
+For every route, see the [API reference](https://docs.lumoauth.dev/api-reference).
 
 ## Output formats
 
 ```bash
-lumo users list                # ASCII table (default in TTYs)
+lumo users list                # table (the default)
 lumo users list -o json        # JSON
 lumo users list -o yaml        # YAML
-lumo users list | jq '.data[].email'    # auto-JSON when piped
+lumo users list -o json | jq '.data[].email'
 ```
 
-The CLI auto-detects non-TTY environments and switches to JSON automatically — no `-o json` needed when piping into `jq` or another tool.
+Pass `-o json` whenever another program reads the output. To use JSON for a whole shell session, set `LUMO_OUTPUT_FORMAT=json`.
 
----
+## Use lumo from a coding agent
 
-## AI agent integration
+`lumo` works well for AI coding agents such as Claude Code, Cursor, Codex and GitHub Copilot.
 
-This CLI is designed to be easily used by AI coding agents (Copilot, Cursor, Claude Code, etc.) to manage LumoAuth resources programmatically.
+> [!TIP]
+> Install the [`lumoauth-cli`](https://github.com/lumoauth/agent-skills/tree/main/skills/lumoauth-cli) skill so that your agent knows every command:
+>
+> ```bash
+> npx skills add lumoauth/agent-skills --skill lumoauth-cli
+> ```
+>
+> The [LumoAuth agent skills](https://github.com/lumoauth/agent-skills) also cover sign-in for apps, access control, agent identity and MCP servers.
 
 | Feature | Details |
 |---------|---------|
-| Auto-JSON output | Non-TTY environments automatically get JSON |
-| Structured errors | `{"error": true, "message", "hint", "status", "code", "details"}` — `hint` says how to fix it (e.g. the exact `lumo login --scope …`) |
-| Typed exit codes | `0` success · `1` error · `2` auth/authorization · `3` not found · `4` invalid input · `5` rate limited |
-| `--quiet` mode | Suppresses decorative output |
-| Raw API | `lumo api` allows any endpoint without a dedicated command |
-| No interactivity | All operations are non-interactive (no prompts during execution) |
+| JSON output | `-o json` on every command, or `LUMO_OUTPUT_FORMAT=json` for the whole session |
+| Structured errors | In JSON mode, an error prints `{"error": true, "message", "hint", "status", "code", "details"}` on standard output. The `hint` gives the fix, such as the exact `lumo login --scope …` command. |
+| Exit codes | `0` success · `1` error · `2` sign-in or permission · `3` not found · `4` invalid input · `5` rate limited |
+| Quiet mode | `-q` leaves out decorative output |
+| Raw API | `lumo api` reaches any endpoint that has no command |
+| No questions | In a script, commands that ask for confirmation in a terminal stop with an error unless you pass `--yes`. `lumo login` asks for the region and the organization only when you leave out `--base-url` and `--org`. |
 
 ### Example agent prompt
 
@@ -799,36 +874,40 @@ Always use -o json for parseable output. On a 403, read "hint" in the error JSON
 it names the missing scope and how to get it.
 ```
 
-### Example: scripting
+### Example script
 
 ```bash
 #!/bin/bash
-# Spawn a sandbox tenant for a PR and seed it
+# Start a sandbox organization for a pull request and add test data
 SLUG=$(lumo dev start --name pr-1234 -o json | jq -r '.data.slug')
 lumo --org "$SLUG" users create --email demo@example.com --name "Demo"
 lumo --org "$SLUG" agents create --name "PR Bot"
 echo "Sandbox $SLUG ready"
 ```
 
----
-
 ## Environment variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LUMO_API_KEY` | Organization API key (`lmk_...`) | — |
-| `LUMO_ORG` | Organization slug (`LUMO_ORG_ID` still accepted) | active profile's org |
+| `LUMO_ORG` | Organization slug (`LUMO_ORG_ID` still accepted) | organization of the active profile |
 | `LUMO_BASE_URL` | LumoAuth server URL | `https://app.lumoauth.dev` (US) |
 | `LUMO_PROFILE` | Named credentials profile | `current_profile` from credentials.yaml |
 | `LUMO_OUTPUT_FORMAT` | Default output format | `table` |
 | `LUMO_INSECURE` | Skip TLS verification (`true`/`1`) | `false` |
-| `LUMO_CONFIG_DIR` | Custom config directory | `~/.lumoauth` |
-
----
+| `LUMO_CONFIG_DIR` | Custom config folder | `~/.lumoauth` |
+| `LUMO_MCP_CLIENT_SECRET` | Client secret of the MCP server for `lumo mcp check-tool` | — |
+| `LUMO_SDK_PATH` | Local SDK sources for `lumo init` | — |
 
 ## API scopes
 
-Scopes are enforced per resource and fail closed. An API key carries the scopes ticked when it was created; a login token carries what `lumo login --scope` requested (default: the blanket `admin`, which satisfies every row below within the user's own permissions). Read scopes never authorise writes, and a scope for one resource never unlocks another. `lumo settings get` on any area needs `admin:settings:read`; `lumo org update` needs `admin:settings:write`.
+LumoAuth checks scopes for each resource and refuses a call when a scope is missing:
+
+- An API key has the scopes that you chose when you created it.
+- A login token has the scopes that `lumo login --scope` asked for. The default is the `admin` scope, which covers every row below, within the permissions of the user.
+- A read scope never allows a write, and a scope for one resource never allows another resource.
+
+`lumo settings get` needs `admin:settings:read` for every area, and `lumo org update` needs `admin:settings:write`.
 
 | Command | Required scope |
 |---------|---------------|
@@ -836,6 +915,8 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 | `users create/update/delete` | `admin:users:write` |
 | `users authenticators list`, `mfa coverage` | `admin:users:read` |
 | `users authenticators remove`, `users tap` | `admin:users:write` |
+| `users identities list`, `identities legacy-saml` (list) | `admin:users:read` |
+| `users identities link/unlink`, `identities legacy-saml --relink` | `admin:users:write` |
 | `mfa policy get` / `mfa policy set` | `admin:settings:read` / `admin:settings:write` |
 | `roles list/get` | `admin:roles:read` |
 | `roles create/update/delete` | `admin:roles:write` |
@@ -845,10 +926,10 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 | `apps create/update/delete` | `admin:clients:write` |
 | `agents list/get` | `admin:agents:read` |
 | `agents create/update/delete` | `admin:agents:write` |
-| `webhooks list/get` | `admin:webhooks:read` |
-| `webhooks create/update/delete` | `admin:webhooks:write` |
-| `webhooks tunnel start/stream/stop` | `admin:webhooks:write` |
-| `logs list/get/stats/export/follow` | `admin:audit:read` |
+| `webhooks list/get`, `webhooks deliveries list/get` | `admin:webhooks:read` |
+| `webhooks create/update/delete`, `webhooks deliveries replay` | `admin:webhooks:write` |
+| `tunnel` | `admin:webhooks:write` |
+| `logs list/get/stats/export` | `admin:audit:read` |
 | `permissions list/get` | `admin:permissions:read` |
 | `permissions create/update/delete` | `admin:permissions:write` |
 | `settings get`, `org get` | `admin:settings:read` |
@@ -857,59 +938,79 @@ Scopes are enforced per resource and fail closed. An API key carries the scopes 
 | `social list/get` | `admin:social:read` |
 | `social create/delete` | `admin:social:write` |
 | `dev start/list/stop` | `admin:settings:read` (list), `admin:settings:write` (start/stop) |
-| `mcp servers/discovery/test` | `admin:agents:read`, `admin:agents:write` (test mints a token) |
+| `migrate auth0` | `admin:users:write` |
+| `mcp servers/discovery/test` | `admin:agents:read`, `admin:agents:write` (`test` gets a token) |
 | `mcp check-tool` | None: it uses the MCP server's own client credentials (`mcp:authorize`) |
 | `doctor` | any scope that can read the organization (`admin`, `admin:settings:read`) |
 
----
-
 ## Troubleshooting
 
-**`lumo --version` works but `lumo login` says "command not found"** — restart your shell so `~/.local/bin` is on `PATH`.
+**`lumo --version` works, but `lumo login` says "command not found".** Restart your shell, so that `~/.local/bin` is on your `PATH`.
 
-**Browser doesn't open during `lumo login`** — pass `--no-browser` and copy the verification URL by hand. The flow still works.
+**The browser does not open during `lumo login`.** Pass `--no-browser` and copy the verification URL by hand. The sign-in still works.
 
-**`tls: failed to verify certificate` against a dev server** — run `lumo login --insecure` once. The choice is stored in the profile and applies only to that profile's server, so later commands need no flag and production URLs keep full TLS verification. Localhost, `.local`, `http://` and private-network addresses (`10.x`, `172.16–31.x`, `192.168.x`) are detected automatically when you pick "Other / Self-hosted".
+**A script gets a table instead of JSON.** Pass `-o json`, or set `LUMO_OUTPUT_FORMAT=json`.
 
-**`stored credentials have expired`** — the CLI auto-refreshes with the stored refresh token; this error means the refresh token itself expired or was revoked. Run `lumo login` again (add `--profile <name>` if the expired credentials belong to a non-default profile).
+**`tls: failed to verify certificate` with a local development server.** Run `lumo login --insecure` once. `lumo` saves this choice in the profile, for that profile's server only. Later commands need no flag, and production URLs keep full TLS verification. When you enter a custom server URL at the region question, `lumo` turns off TLS verification by itself for localhost, `.local`, `http://` and private network addresses (`10.x`, `172.16–31.x`, `192.168.x`).
 
-**`403 forbidden` right after `lumo login`** — the token has no admin scope: either you narrowed `--scope`, or an administrator narrowed the `lumoauth-cli:<slug>` client. The error's hint names the missing scope; `lumo login` again with it, or use an API key. `lumo doctor` shows the scopes in effect.
+**`stored credentials have expired`.** `lumo` refreshes the access token with the saved refresh token. You see this error when the refresh token expired or was revoked. Run `lumo login` again. Add `--profile <name>` if the credentials belong to a profile other than the active one.
 
-**`invalid_scope` on `lumo login`** — the organization's CLI client does not allow a requested scope. Narrow `--scope`, or ask an administrator to allow it under Applications → LumoAuth CLI.
+**`403 forbidden` right after `lumo login`.** The token has no admin scope. Either you asked for fewer scopes with `--scope`, or an administrator removed scopes from the `lumoauth-cli:<slug>` client. The hint in the error names the missing scope. Run `lumo login` again with that scope, or use an API key. `lumo doctor` shows the scopes that you have.
 
-**`404` from `lumo api`** — paths are relative to `/orgs/<org>/api/v1/admin` unless they start with `/orgs`, `/api` or `/.well-known`; pass `--raw` for anything else relative to the base URL.
+**`invalid_scope` on `lumo login`.** The CLI client of the organization does not allow a scope that you asked for. Ask for fewer scopes with `--scope`, or ask an administrator to allow the scope under **Applications → LumoAuth CLI**.
 
-**Webhooks don't show up in `lumo tunnel`** — check `lumo webhooks list` for any *other* webhooks subscribed to the same events; the dispatcher fires every subscriber. The tunnel still receives them, but make sure you're reproducing the action that triggers the event.
+**`404` from `lumo api`.** Paths are relative to `/orgs/<org>/api/v1/admin`, unless they start with `/orgs`, `/api` or `/.well-known`. For any other path relative to the base URL, pass `--raw`.
 
-**`lumo dev stop` says "does not own this sandbox"** — sandboxes are owned by the user who created them. If a teammate spawned it, ask them to destroy it (or wait for the cleanup cron to expire it).
+**Webhooks do not show up in `lumo tunnel`.** Make sure that you repeat the action that sends the event. Also run `lumo webhooks list` to find *other* webhooks for the same events. LumoAuth delivers each event to every webhook that subscribes to it, so the tunnel and the other webhooks all get it.
 
----
+**`lumo dev stop` says "does not own this sandbox".** Only the user who created a sandbox can delete it. Ask that teammate to delete it, or wait for the cleanup job to remove it after its time to live.
 
-## Releasing
+## Contributing
 
-Releases are cut with [GoReleaser](https://goreleaser.com) from `.goreleaser.yaml` (schema v2). Pushing a `vX.Y.Z` tag builds the archive matrix, publishes the GitHub release with `checksums.txt`, and pushes package-manager manifests:
+You need Go 1.22 or later. Run the checks before you open a pull request:
 
-| Channel | Where it lands |
+```bash
+go build -o lumo .
+go test ./...
+gofmt -l .           # prints nothing when the formatting is correct
+```
+
+The tests include a route check: each Admin API path in `cmd/` must exist in the LumoAuth OpenAPI spec. The test reads the spec from `LUMO_OPENAPI_PATH`, or from a checkout of [`LumoAuth/api-clients`](https://github.com/LumoAuth/api-clients) next to `cli/`. Without a spec, the test skips.
+
+<details>
+<summary><b>Releasing</b></summary>
+
+<a name="releasing"></a>
+
+<br>
+
+[GoReleaser](https://goreleaser.com) builds each release from `.goreleaser.yaml` (schema v2). When you push a `vX.Y.Z` tag, it builds the archives for each platform, publishes the GitHub release with `checksums.txt` and pushes the package manager manifests:
+
+| Channel | Destination |
 |---|---|
-| Homebrew | cask `Casks/lumo.rb` in [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap), completions generated from the binary |
+| Homebrew | cask `Casks/lumo.rb` in [`LumoAuth/homebrew-tap`](https://github.com/LumoAuth/homebrew-tap), with completions generated from the binary |
 | Scoop | `lumo.json` in [`LumoAuth/scoop-bucket`](https://github.com/LumoAuth/scoop-bucket) |
-| winget | manifests pushed to the [`LumoAuth/winget-pkgs`](https://github.com/LumoAuth/winget-pkgs) fork on a `lumo-<version>` branch, with an automatic PR to `microsoft/winget-pkgs` |
+| winget | manifests on a `lumo-<version>` branch of the [`LumoAuth/winget-pkgs`](https://github.com/LumoAuth/winget-pkgs) fork, with an automatic pull request to `microsoft/winget-pkgs` |
 
-Pre-release tags (`-rc.*`, `-beta.*`) create the GitHub release but skip all three publishers (`skip_upload: auto`).
+Pre-release tags (`-rc.*`, `-beta.*`) create the GitHub release but skip all three package managers (`skip_upload: auto`).
 
 ```bash
 go test ./... && gofmt -l . && goreleaser check    # pre-flight (GoReleaser v2.x)
-goreleaser release --snapshot --clean              # rehearse: builds everything into dist/, publishes nothing
+goreleaser release --snapshot --clean              # rehearsal: builds everything into dist/, publishes nothing
 git tag -a v1.2.0 -m v1.2.0 && git push origin v1.2.0
 GITHUB_TOKEN=<cross-repo PAT> goreleaser release --clean
 ```
 
-The token must be able to write to this repo, the tap, the bucket and the winget fork, and open PRs on `microsoft/winget-pkgs`; a classic PAT with the `repo` scope does. The version string is injected from the tag via ldflags, so there is nothing to bump in source.
+The token must be able to write to this repository, the tap, the bucket and the winget fork, and to open pull requests on `microsoft/winget-pkgs`. A classic PAT with the `repo` scope can do all of this. The release pipeline takes the version from the tag (through ldflags), so there is nothing to change in the source.
+
+</details>
 
 <details>
-<summary><strong>Project structure</strong></summary>
+<summary><b>Project structure</b></summary>
 
 <a name="project-structure"></a>
+
+<br>
 
 ```
 cli/
@@ -921,6 +1022,7 @@ cli/
 │   ├── root.go                        # Root command, global flags, exit codes
 │   ├── version.go                     # `lumo version` / `--version`
 │   ├── login.go                       # `lumo login/logout/whoami`
+│   ├── doctor.go                      # `lumo doctor`
 │   ├── profile.go                     # `lumo profile list/use/create/delete/show`
 │   ├── upgrade.go                     # `lumo upgrade` (channel-aware self-update)
 │   ├── dev.go                         # `lumo dev start/stop/list`
@@ -932,7 +1034,9 @@ cli/
 │   │   ├── fastapi/
 │   │   └── go/
 │   ├── config.go                      # `lumo config init/show/set`
-│   ├── users.go, roles.go, groups.go, apps.go, agents.go, …
+│   ├── users.go, roles.go, groups.go, apps.go, agents.go, mcp.go, …
+│   ├── migrate.go                     # `lumo migrate auth0`
+│   ├── route_drift_test.go            # Admin API paths vs the OpenAPI spec
 │   └── api.go                         # Raw API passthrough
 └── internal/
     ├── auth/device_flow.go            # RFC 8628 device flow client
@@ -944,6 +1048,14 @@ cli/
 ```
 
 </details>
+
+## Resources
+
+- [`lumo` documentation](https://docs.lumoauth.dev/cli)
+- [LumoAuth documentation](https://docs.lumoauth.dev)
+- [API reference](https://docs.lumoauth.dev/api-reference)
+- [SDKs and libraries](https://docs.lumoauth.dev/developer/sdks)
+- [LumoAuth agent skills](https://github.com/lumoauth/agent-skills)
 
 ## License
 
