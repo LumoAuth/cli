@@ -183,3 +183,25 @@ func TestWebhooksCreateShowsTheSigningSecretAndSendsNoIgnoredFields(t *testing.T
 		t.Fatalf("table output drops the one-time signing secret:\n%s", out)
 	}
 }
+
+func TestWebhooksUpdateWithANewURLAsksForANewSecretAndShowsIt(t *testing.T) {
+	resp := `{"data":{"id":42,"url":"https://example.com/moved","secret":"rotated456secret","_note":"Store the new secret"},"message":"Webhook updated successfully"}`
+	out, reqs, err := runAgainstFakeServer(t, 200, resp,
+		"webhooks", "update", "42", "--url", "https://example.com/moved", "--rotate-secret", "-o", "table")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	req := expectOneRequest(t, reqs, "PATCH", adminBase+"/webhooks/42")
+	if req.Body["rotateSecret"] != true || req.Body["url"] != "https://example.com/moved" {
+		t.Fatalf("body = %+v, want url and rotateSecret true", req.Body)
+	}
+	if !strings.Contains(out, "rotated456secret") {
+		t.Fatalf("table output drops the one-time signing secret:\n%s", out)
+	}
+
+	// Without the flag the field is not sent: the API decides (400 for a signed webhook).
+	_, reqs, _ = runAgainstFakeServer(t, 200, `{"data":{"id":42}}`, "webhooks", "update", "42", "--events", "user.created")
+	if _, ok := expectOneRequest(t, reqs, "PATCH", adminBase+"/webhooks/42").Body["rotateSecret"]; ok {
+		t.Fatalf("rotateSecret sent without --rotate-secret")
+	}
+}

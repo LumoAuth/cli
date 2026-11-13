@@ -109,6 +109,7 @@ func (c *Config) Validate() error {
 	// the silent refresh below talks to the right server with the right TLS
 	// settings.
 	c.InheritFromProfile(creds)
+	c.UseOrgAPIKey()
 	// Silently refresh when the access token has expired but a refresh
 	// token is on disk. The CLI's device-flow access tokens are only valid
 	// for an hour, so without this every command after the first hour fails
@@ -171,6 +172,17 @@ func (c *Config) InheritFromProfile(creds *Credentials) {
 	}
 	if !c.Insecure && creds.InsecureFor(c.BaseURL) {
 		c.Insecure = true
+	}
+}
+
+// UseOrgAPIKey switches to the API key that `lumo dev start` stored for the
+// organization being addressed, when there is one. A key belongs to exactly
+// one organization, so for a sandbox its own key replaces a configured key
+// (LUMO_API_KEY, --api-key, config.yaml), which can only be another
+// organization's. Call it after InheritFromProfile.
+func (c *Config) UseOrgAPIKey() {
+	if key := OrgAPIKey(c.OrgID, c.BaseURL); key != "" {
+		c.APIKey = key
 	}
 }
 

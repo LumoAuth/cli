@@ -102,6 +102,7 @@ var whoamiCmd = &cobra.Command{
 			"base_url": cfg.BaseURL,
 		}
 		cfg.InheritFromProfile(creds)
+		cfg.UseOrgAPIKey()
 		info["org"] = cfg.OrgID
 		info["base_url"] = cfg.BaseURL
 		info["tls_verify"] = !cfg.Insecure

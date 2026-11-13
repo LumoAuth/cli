@@ -492,7 +492,9 @@ lumo dev stop sandbox-pr-1234-7a3b21
 
 A sandbox is a separate organization with its own slug. Use it for branch previews, pull request environments or experiments. Each sandbox has a time to live: 24 hours by default, 7 days at most. A daily cleanup job deletes each sandbox after its time to live ends.
 
-`lumo dev start` prints the slug of the sandbox. Use the slug like any other organization: pass `--org`, or export `LUMO_ORG`. To delete a sandbox early, run `lumo dev stop`. Only its owner, the user who created it, can delete it.
+`lumo dev start` prints the slug of the sandbox. A new sandbox holds an administrator role, a signing key, a Starter App client and one API key that can administer it. It holds no user who can sign in, and your own login or API key does not reach into it. `lumo dev start` saves the sandbox's API key as a profile that is named after the sandbox, so every command works when you pass `--org <sandbox-slug>` (for example `lumo --org <sandbox-slug> users create --email dev@example.com`). With `-o json` the command prints the server's answer, which contains the key once in `data.api_key`. To delete a sandbox early, run `lumo dev stop`, which also removes the saved key. Only its owner, the user who created it, can delete it.
+
+A sandbox uses the plan of the organization that created it and cannot create sandboxes itself.
 
 To start sandboxes, your organization needs the **Developer sandboxes** add-on ($199/month, Business plan only, up to 10 live sandboxes for each owner). Without the add-on, `dev start` fails with `403 feature_not_in_plan`, and `lumo` prints the billing page where an administrator can add it. `dev list` and `dev stop` work without the add-on, so you can always delete existing sandboxes.
 
@@ -773,7 +775,7 @@ Webhooks for other systems and the audit log of everything that happens in the o
 lumo webhooks list
 lumo webhooks get <id>
 lumo webhooks create --url https://example.com/hook --events user.created,user.login
-lumo webhooks update <id> [--url "..."] [--events e1,e2]
+lumo webhooks update <id> [--url "..." --rotate-secret] [--events e1,e2]
 lumo webhooks delete <id>
 
 lumo webhooks deliveries list <webhook-id> [--status pending|success|failed|dead_lettered] [--limit 50]
@@ -807,9 +809,10 @@ Move users from another identity provider.
 ```bash
 lumo migrate auth0 --file users.json --dry-run     # read and validate only
 lumo migrate auth0 --file users.json [--concurrent 4] [--limit 100]
+lumo migrate auth0 --file users.json --send-reset  # also send each new user a password-reset email
 ```
 
-`lumo migrate auth0` reads an Auth0 bulk user export and creates each user through the Admin API. It skips users whose email already exists, so you can run it again safely. `--concurrent` sets the number of parallel requests (1 to 16). `--limit` stops after that many users, for a migration in stages.
+`lumo migrate auth0` reads an Auth0 bulk user export and creates each user through the Admin API. It skips users whose email already exists, so you can run it again safely. `--concurrent` sets the number of parallel requests (1 to 16). `--limit` stops after that many users, for a migration in stages. `--send-reset` requests a password-reset email for each user that the run creates (one more request per user; the link in the email is short-lived). When the API answers `429`, the importer waits for the time in `Retry-After` and sends the request again, so a large import runs at the rate that the API allows.
 
 `lumo` never copies Auth0 password hashes. Migrated users have no password, and they set one with your organization's first sign-in flow, such as a magic link or a password reset.
 

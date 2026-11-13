@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -43,12 +45,19 @@ Typical workflow:
   3. Review the per-row outcome printed to stderr; the summary line is
      also printed to stdout for scripting.
 
-The CLI never sends Auth0 password hashes anywhere — bcrypt hashes from
-Auth0 are not directly compatible with LumoAuth's password policy and
-attempting to migrate them would silently break login. Migrated users
-are created without a password and are sent through your tenant's
-"first login" flow (magic link or password reset) the next time they
-sign in. Use --send-reset to trigger this proactively.`,
+Passwords are not migrated: the Admin API takes a password only as plain
+text and has no field for an existing hash. Migrated users are created
+without a password. They sign in with a passwordless method your
+organization offers (magic link, social login, SSO, passkey) or set a
+password with "Forgot password?" on the sign-in page.
+
+Use --send-reset to send each newly created user a password-reset email
+right away (one more API request per user). The link in that email is
+short-lived; a user who opens it late requests a new one from the
+sign-in page.
+
+When the API answers 429, the importer waits for the time given in
+Retry-After and sends the request again.`,
 	RunE: runMigrateAuth0,
 }
 
@@ -64,7 +73,7 @@ func init() {
 	migrateAuth0Cmd.Flags().StringVar(&migrateAuth0File, "file", "", "Path to Auth0 export JSON file (required)")
 	migrateAuth0Cmd.Flags().BoolVar(&migrateAuth0DryRun, "dry-run", false, "Parse and validate only — no writes")
 	migrateAuth0Cmd.Flags().IntVar(&migrateAuth0Concurrent, "concurrent", 4, "Number of parallel POSTs (1–16)")
-	migrateAuth0Cmd.Flags().BoolVar(&migrateAuth0SendReset, "send-reset", false, "Trigger a password-reset email for each migrated user")
+	migrateAuth0Cmd.Flags().BoolVar(&migrateAuth0SendReset, "send-reset", false, "Send a password-reset email to each newly created user")
 	migrateAuth0Cmd.Flags().IntVar(&migrateAuth0Limit, "limit", 0, "Stop after N users (0 = no limit; useful for staged migrations)")
 	_ = migrateAuth0Cmd.MarkFlagRequired("file")
 
@@ -114,7 +123,23 @@ type migrateResult struct {
 	Status  string // created | skipped | failed
 	Code    int
 	Message string
+	// Reset is the outcome of --send-reset for a created user:
+	// "" (not requested), "sent" or "failed" (ResetMessage says why).
+	Reset        string
+	ResetMessage string
 }
+
+// Throttling: the Admin API limits each credential and answers 429 with
+// Retry-After. A throttled request is sent again after that wait, at most
+// migrateMaxRetries times; migrateSleep is a seam for tests.
+const (
+	migrateMaxRetries      = 8
+	migrateMaxRetryWait    = 2 * time.Minute
+	migrateDefaultBackoff  = 2 * time.Second
+	migrateMaxErrorMessage = 200
+)
+
+var migrateSleep = time.Sleep
 
 func runMigrateAuth0(cmd *cobra.Command, args []string) error {
 	cfg, err := getConfigValidated()
@@ -143,6 +168,14 @@ func runMigrateAuth0(cmd *cobra.Command, args []string) error {
 	if migrateAuth0DryRun {
 		fmt.Fprintln(os.Stderr, "  --dry-run: no writes will be performed")
 	}
+	sendReset := migrateAuth0SendReset && !migrateAuth0DryRun
+	if migrateAuth0SendReset {
+		if migrateAuth0DryRun {
+			fmt.Fprintln(os.Stderr, "  --send-reset: no email is sent in a dry run")
+		} else {
+			fmt.Fprintln(os.Stderr, "  --send-reset: each newly created user is sent a password-reset email")
+		}
+	}
 	fmt.Fprintf(os.Stderr, "  Target tenant: %s\n  Base URL:      %s\n  Concurrency:   %d\n\n",
 		cfg.OrgID, cfg.BaseURL, migrateAuth0Concurrent)
 
@@ -165,7 +198,7 @@ func runMigrateAuth0(cmd *cobra.Command, args []string) error {
 		go func() {
 			defer wg.Done()
 			for u := range in {
-				out <- importOne(hc, usersURL, auth, u, migrateAuth0DryRun)
+				out <- importOne(hc, usersURL, auth, u, migrateAuth0DryRun, sendReset)
 			}
 		}()
 	}
@@ -178,15 +211,24 @@ func runMigrateAuth0(cmd *cobra.Command, args []string) error {
 	go func() { wg.Wait(); close(out) }()
 
 	var (
-		created uint64
-		skipped uint64
-		failed  uint64
+		created     uint64
+		skipped     uint64
+		failed      uint64
+		resetSent   uint64
+		resetFailed uint64
 	)
 	for r := range out {
 		switch r.Status {
 		case "created":
 			atomic.AddUint64(&created, 1)
 			fmt.Fprintf(os.Stderr, "  ✓ %s\n", r.Email)
+			switch r.Reset {
+			case "sent":
+				atomic.AddUint64(&resetSent, 1)
+			case "failed":
+				atomic.AddUint64(&resetFailed, 1)
+				fmt.Fprintf(os.Stderr, "  ! %s  created, but the reset email was not sent: %s\n", r.Email, r.ResetMessage)
+			}
 		case "skipped":
 			atomic.AddUint64(&skipped, 1)
 			fmt.Fprintf(os.Stderr, "  – %s  (%s)\n", r.Email, r.Message)
@@ -197,21 +239,31 @@ func runMigrateAuth0(cmd *cobra.Command, args []string) error {
 	}
 
 	summary := struct {
-		Total   int    `json:"total"`
-		Created uint64 `json:"created"`
-		Skipped uint64 `json:"skipped"`
-		Failed  uint64 `json:"failed"`
-		DryRun  bool   `json:"dry_run"`
+		Total       int     `json:"total"`
+		Created     uint64  `json:"created"`
+		Skipped     uint64  `json:"skipped"`
+		Failed      uint64  `json:"failed"`
+		ResetSent   *uint64 `json:"reset_sent,omitempty"`
+		ResetFailed *uint64 `json:"reset_failed,omitempty"`
+		DryRun      bool    `json:"dry_run"`
 	}{Total: len(users), Created: created, Skipped: skipped, Failed: failed, DryRun: migrateAuth0DryRun}
 
 	fmt.Fprintln(os.Stderr)
-	fmt.Fprintf(os.Stderr, "Done. created=%d skipped=%d failed=%d\n", created, skipped, failed)
+	if sendReset {
+		summary.ResetSent, summary.ResetFailed = &resetSent, &resetFailed
+		fmt.Fprintf(os.Stderr, "Done. created=%d skipped=%d failed=%d reset_sent=%d reset_failed=%d\n", created, skipped, failed, resetSent, resetFailed)
+		if resetFailed > 0 {
+			fmt.Fprintln(os.Stderr, "A re-run does not send these emails again (the users now exist). Send one with: lumo api POST /users/<email>/password-reset")
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "Done. created=%d skipped=%d failed=%d\n", created, skipped, failed)
+	}
 
 	if getPrinter().IsJSON() {
 		raw, _ := json.Marshal(summary)
 		fmt.Println(string(raw))
 	}
-	if failed > 0 {
+	if failed > 0 || resetFailed > 0 {
 		os.Exit(1)
 	}
 	return nil
@@ -251,7 +303,7 @@ func loadAuth0Export(path string) ([]auth0User, error) {
 	return out, nil
 }
 
-func importOne(hc *http.Client, usersURL, auth string, u auth0User, dryRun bool) migrateResult {
+func importOne(hc *http.Client, usersURL, auth string, u auth0User, dryRun, sendReset bool) migrateResult {
 	if u.Email == "" {
 		return migrateResult{Email: "(no email)", Status: "skipped", Message: "missing email"}
 	}
@@ -294,41 +346,118 @@ func importOne(hc *http.Client, usersURL, auth string, u auth0User, dryRun bool)
 	}
 
 	body, _ := json.Marshal(payload)
-	req, _ := http.NewRequest("POST", usersURL, bytes.NewReader(body))
-	req.Header.Set("Authorization", auth)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Requested-With", "XMLHttpRequest")
-
-	resp, err := hc.Do(req)
+	status, respBody, err := migratePost(hc, usersURL, auth, body)
 	if err != nil {
 		return migrateResult{Email: u.Email, Status: "failed", Message: err.Error()}
 	}
-	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(resp.Body)
 
-	switch resp.StatusCode {
+	switch status {
 	case 201, 200:
-		return migrateResult{Email: u.Email, Status: "created", Code: resp.StatusCode}
+		result := migrateResult{Email: u.Email, Status: "created", Code: status}
+		if sendReset {
+			result.Reset, result.ResetMessage = sendMigrationReset(hc, usersURL, auth, respBody)
+		}
+		return result
 	case 409:
 		return migrateResult{Email: u.Email, Status: "skipped", Code: 409, Message: "already exists"}
 	default:
-		// Try to extract the error message from the JSON envelope.
-		var env struct {
-			Error   string `json:"error"`
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(respBody, &env)
-		msg := env.Message
-		if msg == "" {
-			msg = env.Error
-		}
-		if msg == "" {
-			msg = strings.TrimSpace(string(respBody))
-		}
-		if len(msg) > 200 {
-			msg = msg[:200] + "…"
-		}
-		return migrateResult{Email: u.Email, Status: "failed", Code: resp.StatusCode, Message: msg}
+		return migrateResult{Email: u.Email, Status: "failed", Code: status, Message: migrateErrorMessage(respBody)}
 	}
+}
+
+// sendMigrationReset asks the Admin API to send a password-reset email to
+// the user that the create response describes
+// (POST /admin/users/{id}/password-reset).
+func sendMigrationReset(hc *http.Client, usersURL, auth string, createBody []byte) (string, string) {
+	var created struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	_ = json.Unmarshal(createBody, &created)
+	if created.Data.ID == "" {
+		return "failed", "the create response has no user id"
+	}
+
+	status, respBody, err := migratePost(hc, usersURL+"/"+url.PathEscape(created.Data.ID)+"/password-reset", auth, nil)
+	if err != nil {
+		return "failed", err.Error()
+	}
+	if status >= 200 && status < 300 {
+		return "sent", ""
+	}
+	return "failed", fmt.Sprintf("HTTP %d  %s", status, migrateErrorMessage(respBody))
+}
+
+// migratePost sends one POST and returns the status and body. A 429 is
+// waited out (Retry-After) and the request sent again, so a large import
+// slows down to the rate the API allows instead of failing rows.
+func migratePost(hc *http.Client, target, auth string, body []byte) (int, []byte, error) {
+	for attempt := 0; ; attempt++ {
+		var reader io.Reader
+		if body != nil {
+			reader = bytes.NewReader(body)
+		}
+		req, err := http.NewRequest("POST", target, reader)
+		if err != nil {
+			return 0, nil, err
+		}
+		req.Header.Set("Authorization", auth)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+		resp, err := hc.Do(req)
+		if err != nil {
+			return 0, nil, err
+		}
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= migrateMaxRetries {
+			return resp.StatusCode, respBody, nil
+		}
+		migrateSleep(retryAfterDelay(resp.Header.Get("Retry-After"), attempt, time.Now()))
+	}
+}
+
+// retryAfterDelay reads Retry-After (seconds or an HTTP date). Without a
+// usable value it backs off exponentially. The wait is capped.
+func retryAfterDelay(header string, attempt int, now time.Time) time.Duration {
+	delay := migrateDefaultBackoff << uint(attempt)
+	header = strings.TrimSpace(header)
+	if seconds, err := strconv.Atoi(header); err == nil && seconds >= 0 {
+		delay = time.Duration(seconds) * time.Second
+	} else if at, err := http.ParseTime(header); err == nil {
+		delay = at.Sub(now)
+	}
+	if delay < time.Second {
+		delay = time.Second
+	}
+	if delay > migrateMaxRetryWait {
+		delay = migrateMaxRetryWait
+	}
+	return delay
+}
+
+// migrateErrorMessage extracts the error text from the API's JSON envelope.
+func migrateErrorMessage(respBody []byte) string {
+	var env struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(respBody, &env)
+	msg := env.Message
+	if msg == "" {
+		msg = env.Error
+	}
+	if msg == "" {
+		msg = strings.TrimSpace(string(respBody))
+	}
+	if len(msg) > migrateMaxErrorMessage {
+		msg = msg[:migrateMaxErrorMessage] + "…"
+	}
+	return msg
 }

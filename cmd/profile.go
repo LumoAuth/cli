@@ -220,6 +220,10 @@ var profileShowCmd = &cobra.Command{
 // profileStatus summarizes a profile's auth state for listings.
 func profileStatus(c *config.Credentials) string {
 	switch {
+	case c.IsSandboxKey() && c.IsExpired():
+		return "sandbox ended"
+	case c.IsSandboxKey():
+		return "sandbox key"
 	case !c.HasToken():
 		return "no credentials"
 	case c.IsExpired():

@@ -72,6 +72,11 @@ type Credentials struct {
 	// disabled (--insecure, or a local/private dev URL). It applies only to
 	// requests to this profile's own BaseURL — see InsecureFor.
 	Insecure bool `yaml:"insecure,omitempty"`
+	// APIKey is the API key of a sandbox that `lumo dev start` created. Such
+	// a profile is named after the sandbox's slug, holds no login token, and
+	// ExpiresAt is when the sandbox (and with it the key) ends. The key is
+	// used for commands that address that organization — see OrgAPIKey.
+	APIKey string `yaml:"api_key,omitempty"`
 
 	// profile records which named profile these credentials were loaded
 	// from, so Save() writes back to the right slot. Not serialized.
@@ -352,6 +357,102 @@ func DeleteProfile(name string) error {
 		}
 	}
 	return SaveStore(store)
+}
+
+// IsSandboxKey reports whether this is a profile written by `lumo dev start`:
+// an API key for one sandbox and no login token.
+func (c *Credentials) IsSandboxKey() bool {
+	return c != nil && c.APIKey != "" && !c.HasToken()
+}
+
+// sameServer compares base URLs the way requests are built (no trailing slash).
+func sameServer(a, b string) bool {
+	return strings.TrimRight(a, "/") == strings.TrimRight(b, "/")
+}
+
+// pruneExpiredSandboxKeys drops sandbox profiles whose sandbox has ended:
+// the server has closed it, so the stored key opens nothing.
+func pruneExpiredSandboxKeys(store *CredentialsStore) {
+	for name, c := range store.Profiles {
+		if c.IsSandboxKey() && !c.ExpiresAt.IsZero() && time.Now().After(c.ExpiresAt) {
+			delete(store.Profiles, name)
+			if store.CurrentProfile == name {
+				store.CurrentProfile = ""
+			}
+		}
+	}
+}
+
+// SaveSandboxKey stores the API key of a sandbox as a profile named after the
+// sandbox's slug. It never changes current_profile: the sandbox is reached
+// with --org <slug> (or --profile <slug>), and the active login stays as it is.
+func SaveSandboxKey(slug, baseURL, apiKey string, expiresAt time.Time, insecure bool) error {
+	if err := ValidateProfileName(slug); err != nil {
+		return err
+	}
+	store, err := LoadStore()
+	if err != nil {
+		return err
+	}
+	if existing, ok := store.Profiles[slug]; ok && !existing.IsSandboxKey() {
+		return fmt.Errorf("profile %q already exists and is not a sandbox profile", slug)
+	}
+	pruneExpiredSandboxKeys(store)
+	store.Profiles[slug] = &Credentials{
+		BaseURL:   baseURL,
+		OrgID:     slug,
+		APIKey:    apiKey,
+		ExpiresAt: expiresAt,
+		Insecure:  insecure,
+		profile:   slug,
+	}
+	return SaveStore(store)
+}
+
+// DeleteSandboxKey removes the profile that SaveSandboxKey wrote for a
+// sandbox, and any other sandbox profile that has expired. A profile of that
+// name that is not a sandbox profile is left alone. Reports whether the
+// sandbox's profile existed.
+func DeleteSandboxKey(slug string) (bool, error) {
+	store, err := LoadStore()
+	if err != nil {
+		return false, err
+	}
+	c, ok := store.Profiles[slug]
+	found := ok && c.IsSandboxKey()
+	if found {
+		delete(store.Profiles, slug)
+		if store.CurrentProfile == slug {
+			store.CurrentProfile = ""
+		}
+	}
+	before := len(store.Profiles)
+	pruneExpiredSandboxKeys(store)
+	if !found && before == len(store.Profiles) {
+		return false, nil
+	}
+	return found, SaveStore(store)
+}
+
+// OrgAPIKey returns the stored sandbox key for the organization being
+// addressed, or "". The key is only returned for the server that issued it,
+// so --base-url cannot send it anywhere else, and not after the sandbox ended.
+func OrgAPIKey(orgID, baseURL string) string {
+	if orgID == "" {
+		return ""
+	}
+	store, err := LoadStore()
+	if err != nil {
+		return ""
+	}
+	c := store.Profiles[orgID]
+	if !c.IsSandboxKey() || c.OrgID != orgID || !sameServer(c.BaseURL, baseURL) {
+		return ""
+	}
+	if !c.ExpiresAt.IsZero() && time.Now().After(c.ExpiresAt) {
+		return ""
+	}
+	return c.APIKey
 }
 
 // HasToken reports whether the profile actually holds usable credentials

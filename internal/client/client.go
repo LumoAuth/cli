@@ -314,7 +314,9 @@ type PaginationMeta struct {
 //     when possible), and target the same org as this request, use the bearer
 //     token. This is the per-user, auditable, revocable session — the right
 //     default whenever we have it.
-//  2. Otherwise fall back to a configured API key (lmk_…) for scripted use.
+//  2. Otherwise an API key (lmk_…): the one `lumo dev start` stored for the
+//     organization being addressed if it is a sandbox, else the configured
+//     key for scripted use.
 //  3. Otherwise the request is unauthenticated and will fail at validate().
 func New(cfg *config.Config) *Client {
 	creds, _ := config.LoadCredentials()
@@ -322,6 +324,8 @@ func New(cfg *config.Config) *Client {
 	// pinned, so commands work without --org or --insecure right after
 	// `lumo login`. Must happen before the transport is built.
 	cfg.InheritFromProfile(creds)
+	// A sandbox from `lumo dev start` is reached with its own stored key.
+	cfg.UseOrgAPIKey()
 	c := &Client{cfg: cfg, httpClient: NewHTTPClient(cfg.Insecure, 30*time.Second), method: AuthNone}
 
 	if creds.HasToken() && creds.IsExpired() && creds.OrgID == cfg.OrgID {

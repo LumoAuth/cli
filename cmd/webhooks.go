@@ -149,8 +149,13 @@ var webhooksUpdateCmd = &cobra.Command{
 		if v, _ := cmd.Flags().GetStringSlice("events"); len(v) > 0 {
 			body["events"] = v
 		}
+		// The API refuses a new URL for a signed webhook unless a new signing
+		// secret is asked for in the same request.
+		if v, _ := cmd.Flags().GetBool("rotate-secret"); v {
+			body["rotateSecret"] = true
+		}
 		if len(body) == 0 {
-			return fmt.Errorf("no fields to update: pass --url or --events")
+			return fmt.Errorf("no fields to update: pass --url, --events or --rotate-secret")
 		}
 
 		resp, err := c.Patch(fmt.Sprintf("/webhooks/%s", args[0]), body)
@@ -161,7 +166,18 @@ var webhooksUpdateCmd = &cobra.Command{
 			p.PrintResult(json.RawMessage(resp))
 			return nil
 		}
+		// A rotation returns the new signing secret once, so a table must show it.
+		var updated struct {
+			Data struct {
+				Secret string `json:"secret"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(resp, &updated)
 		p.PrintSuccess("Webhook updated")
+		if updated.Data.Secret != "" {
+			fmt.Printf("Signing secret: %s\n", updated.Data.Secret)
+			p.PrintNote("Store the signing secret now to verify webhook signatures. LumoAuth does not show it again.")
+		}
 		return nil
 	},
 }
@@ -199,8 +215,9 @@ func init() {
 	_ = webhooksCreateCmd.Flags().MarkDeprecated("description", "the API does not store a webhook description; the flag is ignored")
 	_ = webhooksCreateCmd.Flags().MarkDeprecated("secret", "LumoAuth generates the signing secret and prints it once; the flag is ignored")
 
-	webhooksUpdateCmd.Flags().String("url", "", "Webhook URL")
+	webhooksUpdateCmd.Flags().String("url", "", "Webhook URL (a new URL needs --rotate-secret when the webhook has a signing secret)")
 	webhooksUpdateCmd.Flags().StringSlice("events", nil, "Event types")
+	webhooksUpdateCmd.Flags().Bool("rotate-secret", false, "Issue a new signing secret (required with --url for a signed webhook); it is printed once")
 	webhooksUpdateCmd.Flags().String("description", "", "Webhook description")
 	_ = webhooksUpdateCmd.Flags().MarkDeprecated("description", "the API does not store a webhook description; the flag is ignored")
 
