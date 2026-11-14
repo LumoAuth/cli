@@ -345,11 +345,19 @@ var usersUnblockCmd = &cobra.Command{
 var usersSetPasswordCmd = &cobra.Command{
 	Use:   "set-password <user-id>",
 	Short: "Set a user's password",
-	Args:  cobra.ExactArgs(1),
+	Long: `Set a user's password.
+
+When you are signed in with 'lumo login', the server requires a recent sign-in
+and a fresh MFA check of your own: pass the id of an approved step_up challenge
+with --mfa-challenge (organization API keys are not subject to step-up).`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
 		if err != nil {
 			return err
+		}
+		if challenge, _ := cmd.Flags().GetString("mfa-challenge"); challenge != "" {
+			c = c.WithHeader("X-MFA-Challenge", challenge)
 		}
 		p := getPrinter()
 
@@ -579,6 +587,7 @@ func init() {
 
 	// Set password flags
 	usersSetPasswordCmd.Flags().String("password", "", "New password (required)")
+	usersSetPasswordCmd.Flags().String("mfa-challenge", "", "Id of an approved step_up MFA challenge (needed with 'lumo login' tokens)")
 
 	// Roles set flags
 	usersRolesSetCmd.Flags().StringSlice("roles", nil, "Role slugs (comma-separated)")

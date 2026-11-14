@@ -48,6 +48,23 @@ func TestRotateCredentialsSendsTheNewKeysLifetime(t *testing.T) {
 	}
 }
 
+// The list answer of GET /admin/agents: `data` items with agentId, name,
+// status, identityType and lastUsedAt (an integer id; no capabilities).
+const agentListResponse = `{"data":[{"id":7,"agentId":"agt_3f9a51c07be24d18","name":"Billing Bot","identityType":"api_key","status":"active","createdAt":"2026-11-01T10:00:00+00:00","lastUsedAt":"2026-11-12T09:30:00+00:00","riskLevel":null},{"id":8,"agentId":"agt_77","name":"Idle Bot","identityType":"workload","status":"inactive","createdAt":"2026-11-02T10:00:00+00:00","lastUsedAt":null,"riskLevel":null}],"meta":{"total":2,"page":1,"limit":20,"totalPages":1},"pagination":{"total":2,"page":1,"limit":20,"totalPages":1},"resourceType":"agents"}`
+
+func TestAgentsListTableShowsTheFieldsTheServerSends(t *testing.T) {
+	out, reqs, err := runAgainstFakeServer(t, 200, agentListResponse, "agents", "list", "-o", "table")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expectOneRequest(t, reqs, "GET", adminBase+"/agents")
+	for _, want := range []string{"agt_3f9a51c07be24d18", "Billing Bot", "api_key", "2026-11-12T09:30:00+00:00", "agt_77", "workload", "never"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("table output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRotateCredentialsWithoutALifetimeSendsNoBody(t *testing.T) {
 	_, reqs, err := runAgainstFakeServer(t, 200, rotateResponse, "agents", "rotate-credentials", "agt_1")
 	if err != nil {

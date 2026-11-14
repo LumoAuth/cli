@@ -293,7 +293,7 @@ lumo doctor    # checks the credential against the server
 lumo logout    # removes the tokens of the active profile
 ```
 
-**Scopes.** Every resource command needs the `admin` scope or a resource scope such as `admin:users:read`. The Admin API accepts a login token only when the token has one of these scopes *and* the signed-in user has the `settings.manage` permission. For a session with fewer permissions, ask for resource scopes:
+**Scopes.** Every resource command needs the `admin` scope or a resource scope such as `admin:users:read`. The Admin API accepts a login token only when the token has one of these scopes *and* the signed-in user has the permission that the endpoint asks for (for example `users.view` for `lumo users list`). For a session with fewer permissions, ask for resource scopes:
 
 ```bash
 lumo login --org acme-corp --scope openid,admin:users:read,admin:audit:read
@@ -301,7 +301,7 @@ lumo login --org acme-corp --scope openid,admin:users:read,admin:audit:read
 
 A command that needs another scope fails with `403`. The error names the missing scope and the `lumo login --scope …` command that adds it.
 
-On your first sign-in to an organization, LumoAuth creates a public OAuth client named `lumoauth-cli:<slug>`. The client allows the device code and refresh token grants and the default scopes. The device flow already binds the approval to the user code, so the client does not use PKCE. An administrator can remove scopes from this client to require narrower sessions. A request for a scope that the client does not allow fails with `invalid_scope` and a hint.
+On your first sign-in to an organization, LumoAuth creates a public OAuth client named `lumoauth-cli:<slug>`. The client allows the device code and refresh token grants. A new client allows `openid`, `profile`, `email` and a few resource scopes of earlier CLI versions, and not `admin`: an administrator adds `admin`, or only the `admin:<resource>:<read|write>` scopes that the team needs, in the portal (Applications → LumoAuth CLI → Configuration → Allowed scopes). The device flow already binds the approval to the user code, so the client does not use PKCE. A request for a scope that the client does not allow fails with `invalid_scope` and a hint.
 
 ### Use an API key in CI and scripts
 
@@ -667,7 +667,7 @@ lumo roles update <id> [--name "New Name"] [--permissions p1,p2]
 lumo roles delete <id>
 ```
 
-`--permissions` replaces all the permissions of the role. LumoAuth keeps each permission that you cannot grant yourself. It skips a slug that does not exist or that you cannot grant, and `lumo` prints a warning for each skipped slug.
+`--permissions` replaces all the permissions of the role. LumoAuth keeps each permission of the role that you cannot grant yourself. A slug that does not exist, or a permission that the role does not hold yet and that you cannot grant, refuses the whole change: nothing is changed, and `lumo` prints the reason. On `roles create`, the same refusal means that no role is created.
 
 #### Groups
 

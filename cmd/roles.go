@@ -147,8 +147,9 @@ var rolesUpdateCmd = &cobra.Command{
 
 --permissions replaces the permissions of the role with the slugs that you
 list. LumoAuth keeps any permission of the role that you cannot grant
-yourself, and it skips slugs that do not exist or that you cannot grant;
-lumo prints a warning for each skipped slug.`,
+yourself. A slug that does not exist, or a permission that the role does
+not hold yet and that you cannot grant, refuses the whole change: nothing
+is changed and lumo prints the reason.`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := getClient()
@@ -196,8 +197,9 @@ lumo prints a warning for each skipped slug.`,
 }
 
 // warnSkippedPermissions prints a note for each requested permission slug
-// that is missing from the role in resp. The server skips unknown slugs and
-// permissions that the caller cannot grant without an error.
+// that is missing from the role in resp. Current servers refuse unknown slugs
+// and permissions that the caller cannot grant (400 / 403) instead of
+// skipping them; the note covers servers that still skip them silently.
 func warnSkippedPermissions(p *output.Printer, requested []string, resp []byte) {
 	for _, slug := range skippedPermissions(requested, resp) {
 		p.PrintNote(fmt.Sprintf("! Permission %q was not assigned: it does not exist, or you cannot grant it.", slug))

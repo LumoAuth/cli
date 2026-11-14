@@ -53,11 +53,12 @@ var settingsCmd = &cobra.Command{
 	Long: `View and update one area of organization settings at a time.
 
 Areas:
-  general         Name, display name, time zone, locale
+  general         Organization name and default language (locale)
   authentication  Password policy, sessions, passkeys (alias: auth);
                   the MFA policy has its own command: 'lumo mfa policy'
   security        OAuth hardening switches (e.g. dpop_require_nonce)
-  email           Sender name/address and provider
+  email           Who sends your mail; From address, From name and Reply-To
+                  of your own mail provider (set up in the portal)
   branding        Login page logo, colours, texts (sanitised server-side)
   scim            Provisioning policy: allow_user_creation / updates / deletion,
                   allow_group_operations, protected_attributes, deprovisioning_action

@@ -42,32 +42,30 @@ var agentsListCmd = &cobra.Command{
 			return nil
 		}
 
+		// The list items of GET /admin/agents (AgentHandler::serialize):
+		// capabilities are only in the single-agent answer (`agents get`).
 		var result struct {
 			Data []struct {
-				ID           string   `json:"id"`
-				AgentID      string   `json:"agentId"`
-				Name         string   `json:"name"`
-				Status       string   `json:"status"`
-				Type         string   `json:"type"`
-				Capabilities []string `json:"capabilities"`
+				AgentID      string  `json:"agentId"`
+				Name         string  `json:"name"`
+				Status       string  `json:"status"`
+				IdentityType string  `json:"identityType"`
+				LastUsedAt   *string `json:"lastUsedAt"`
 			} `json:"data"`
-			Meta struct {
-				Total      int `json:"total"`
-				Page       int `json:"page"`
-				TotalPages int `json:"totalPages"`
-			} `json:"meta"`
 		}
-		json.Unmarshal(resp, &result)
+		if err := json.Unmarshal(resp, &result); err != nil {
+			return fmt.Errorf("unexpected agent list response: %w", err)
+		}
 
 		rows := make([][]string, len(result.Data))
 		for i, a := range result.Data {
-			caps := "—"
-			if len(a.Capabilities) > 0 {
-				caps = truncate(fmt.Sprintf("%v", a.Capabilities), 35)
+			lastUsed := "never"
+			if a.LastUsedAt != nil && *a.LastUsedAt != "" {
+				lastUsed = *a.LastUsedAt
 			}
-			rows[i] = []string{a.AgentID, a.Name, a.Status, a.Type, caps}
+			rows[i] = []string{a.AgentID, a.Name, a.Status, a.IdentityType, lastUsed}
 		}
-		p.PrintTable([]string{"Agent ID", "Name", "Status", "Type", "Capabilities"}, rows)
+		p.PrintTable([]string{"Agent ID", "Name", "Status", "Identity type", "Last used"}, rows)
 		return nil
 	},
 }
@@ -390,7 +388,7 @@ func init() {
 
 	addKeyLifetimeFlags(agentsRotateCredsCmd, "the new API key")
 
-	agentsTokenCmd.Flags().Int("ttl", 0, "Token TTL in seconds (default 3600, at most 30 days)")
+	agentsTokenCmd.Flags().Int("ttl", 0, "Token lifetime in seconds, 60-3600 (default 3600); up to 86400 together with --resource")
 	agentsTokenCmd.Flags().StringSlice("scopes", nil, "Narrow the token to these agent capabilities")
 	agentsTokenCmd.Flags().String("resource", "", "Bind the token to a registered MCP server (its Resource URI); the LumoAuth API then refuses the token")
 

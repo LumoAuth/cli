@@ -14,18 +14,19 @@ var orgCmd = &cobra.Command{
 	Long: `Read and change the organization you are signed in to: its name and the
 small set of organization-level settings the Admin API allows.
 
-Only documented, non-security keys are writable: display_name, timezone,
-locale, security.*, email.*, audit_log_retention_days, audit_log_auto_delete,
-agent_governance.*, allow_root_admin_login. Anything else (or any key ending
-in _hash/_secret/_token/_key/_password) is refused with the offending keys
-listed, and nothing is saved. Object-valued keys merge key by key.
+Only documented keys are writable: security.*, audit_log_retention_days,
+audit_log_auto_delete, agent_governance.*, b2b_org_admins_may_invite_new_accounts.
+Anything else (or any key ending in _hash/_secret/_token/_key/_password) is
+refused with the offending keys listed, and nothing is saved. Object-valued
+keys merge key by key. The default language of the hosted pages is set with
+'lumo settings update general --set locale=de', the mail sender with
+'lumo settings update email'.
 
 Examples:
   lumo org get
   lumo org update --name "ACME Corporation"
-  lumo org update --set timezone=Europe/Berlin --set locale=de
   lumo org update --set security.dpop_require_nonce=true
-  lumo org update --set allow_root_admin_login=false
+  lumo org update --set audit_log_auto_delete=true
   lumo org update --data '{"settings":{"audit_log_retention_days":365}}'`,
 }
 

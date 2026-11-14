@@ -120,6 +120,10 @@ The authenticator id is the reference shown by 'lumo users authenticators list'
 the user is notified. This does not switch MFA off: if MFA is required the user
 enrolls again at their next sign-in.
 
+When you are signed in with 'lumo login', the server requires a recent sign-in
+and a fresh MFA check of your own: pass the id of an approved step_up challenge
+with --mfa-challenge (organization API keys are not subject to step-up).
+
 Asks for confirmation on a terminal; pass --yes in scripts.`,
 	Aliases: []string{"rm", "delete"},
 	Args:    cobra.ExactArgs(2),
@@ -144,6 +148,9 @@ Asks for confirmation on a terminal; pass --yes in scripts.`,
 		c, err := getClient()
 		if err != nil {
 			return err
+		}
+		if challenge, _ := cmd.Flags().GetString("mfa-challenge"); challenge != "" {
+			c = c.WithHeader("X-MFA-Challenge", challenge)
 		}
 		p := getPrinter()
 
@@ -291,6 +298,7 @@ func formatTimestamp(s string) string {
 
 func init() {
 	usersAuthenticatorsRemoveCmd.Flags().BoolP("yes", "y", false, "Remove without asking for confirmation")
+	usersAuthenticatorsRemoveCmd.Flags().String("mfa-challenge", "", "Id of an approved step_up MFA challenge (needed with 'lumo login' tokens)")
 
 	usersTapCmd.Flags().String("reason", "", "Why the code is issued (required; audited and shown to the user)")
 	usersTapCmd.Flags().Int("ttl", 60, "Minutes until the code expires (5–10080)")
