@@ -1009,7 +1009,7 @@ The tests include a route check: each Admin API path in `cmd/` must exist in the
 Pre-release tags (`-rc.*`, `-beta.*`) create the GitHub release but skip all three package managers (`skip_upload: auto`).
 
 ```bash
-go test ./... && gofmt -l . && goreleaser check    # pre-flight (GoReleaser v2.x)
+go test ./... && gofmt -l . && goreleaser check    # pre-flight (GoReleaser ≥ 2.20: winget ManifestVersion 1.28.0)
 goreleaser release --snapshot --clean              # rehearsal: builds everything into dist/, publishes nothing
 git tag -a v1.2.0 -m v1.2.0 && git push origin v1.2.0
 GITHUB_TOKEN=<cross-repo PAT> goreleaser release --clean

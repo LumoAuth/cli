@@ -84,12 +84,14 @@ homebrew_casks:
       Get started with:
         lumo login --org <your-org-slug>
     # The binaries aren't notarized, so strip the quarantine attribute or
-    # Gatekeeper will refuse to run them.
+    # Gatekeeper will refuse to run them. `install_steps` (GoReleaser ≥ 2.19)
+    # writes Homebrew's declarative `postflight_steps`; the old free-Ruby
+    # `install` hook wrote `postflight`, which Homebrew deprecated.
     hooks:
       post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/lumo"]
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/lumo"]
           end
     # Don't publish casks for release candidates / pre-releases.
     skip_upload: auto
