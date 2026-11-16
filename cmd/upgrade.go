@@ -126,7 +126,7 @@ func printUpgradeInstructions(channel upgrade.Channel) {
 	}
 	fmt.Println("Upgrade with:")
 	fmt.Println("  lumo upgrade                        # self-update in place")
-	fmt.Println("  curl -sSL https://lumoauth.dev/install.sh | sh")
+	fmt.Println("  curl -fsSL https://raw.githubusercontent.com/LumoAuth/cli/main/install.sh | sh")
 }
 
 // upgradeViaPackageManager prints the package manager command and runs it
